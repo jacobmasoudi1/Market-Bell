@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import { fetchJson } from "@/lib/fetchJson";
+import { Role } from "@prisma/client";
+import { nanoid } from "nanoid";
 
 export type TranscriptEntry = { role: string; text: string; at: string };
 export type HistoryEntry = {
@@ -27,44 +29,100 @@ export function useVoiceSession() {
   const [status, setStatus] = useState("");
   const [transcript, setTranscript] = useState<TranscriptEntry[]>([]);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
+  const [conversationId, setConversationId] = useState<string | null>(null);
   const voiceClientRef = useRef<any>(null);
 
   useEffect(() => {
-    refreshProfile();
+    const savedConversation = localStorage.getItem("conversationId");
+    if (savedConversation) {
+      setConversationId(savedConversation);
+      loadConversation(savedConversation);
+    } else {
+      loadHistory();
+    }
   }, []);
 
-  const addMessage = (role: string, text?: string) => {
+  const addMessage = async (
+    role: Role,
+    text?: string,
+    extras?: {
+      toolName?: string;
+      toolArgsJson?: any;
+      toolResultJson?: any;
+      toolCallId?: string;
+      ensureConversation?: boolean;
+    },
+  ) => {
     if (!text) return;
-    setTranscript((prev) => [
-      ...prev,
-      { role, text, at: new Date().toISOString() },
-    ]);
-  };
-
-  const refreshProfile = async () => {
-    try {
-      const data = await fetchJson("/api/getUserProfile");
-      setHistory(data?.conversationHistory || []);
-    } catch (error: any) {
-      setStatus(`Could not load profile: ${error.message}`);
+    const entry = { role, text, at: new Date().toISOString() };
+    setTranscript((prev) => [...prev, entry]);
+    let targetConversationId = conversationId;
+    if (extras?.ensureConversation && !targetConversationId) {
+      targetConversationId = await ensureConversation();
+    }
+    if (targetConversationId) {
+      try {
+        await fetchJson(`/api/conversations/${targetConversationId}/messages`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            role,
+            text,
+            toolName: extras?.toolName,
+            toolCallId: extras?.toolCallId,
+            toolArgsJson: extras?.toolArgsJson,
+            toolResultJson: extras?.toolResultJson,
+          }),
+        });
+      } catch (err) {
+        console.error("Failed to persist message", err);
+      }
     }
   };
 
-  const persistConversation = async () => {
-    if (!transcript.length) return;
+  const loadHistory = async () => {
     try {
-      await fetchJson("/api/saveConversation", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          transcript,
-          stoppedAt: new Date().toISOString(),
-        }),
-      });
-      await refreshProfile();
+      const data = await fetchJson("/api/conversations");
+      setHistory(data?.conversations || []);
     } catch (error: any) {
-      setStatus(`Saved locally, backend save failed: ${error.message}`);
+      setStatus(`Could not load history: ${error.message}`);
     }
+  };
+
+  const loadConversation = async (id: string) => {
+    try {
+      const data = await fetchJson(`/api/conversations/${id}`);
+      const messages = data?.conversation?.messages || [];
+      setTranscript(
+        messages.map((m: any) => ({
+          role: m.role,
+          text: m.text,
+          at: m.createdAt,
+        })),
+      );
+      setConversationId(id);
+      localStorage.setItem("conversationId", id);
+      await loadHistory();
+    } catch (error: any) {
+      setStatus(`Could not load conversation: ${error.message}`);
+    }
+  };
+
+  const ensureConversation = async () => {
+    if (conversationId) return conversationId;
+    const res = await fetchJson("/api/conversations", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    const id = res?.conversation?.id;
+    if (id) {
+      setConversationId(id);
+      localStorage.setItem("conversationId", id);
+      await loadHistory();
+      return id;
+    }
+    throw new Error("Unable to create conversation");
   };
 
   const startVoiceSession = async () => {
@@ -83,10 +141,12 @@ export function useVoiceSession() {
         throw new Error("Vapi SDK unavailable");
       }
 
+      await ensureConversation();
+
       const client = new Vapi(publicKey);
       client.on?.("message", (payload: any = {}) => {
         const text = payload?.message || payload?.text || payload?.content;
-        if (text) addMessage("agent", text);
+        if (text) addMessage(Role.assistant, text);
       });
       client.on?.("call-end", () => {
         setIsSessionActive(false);
@@ -105,7 +165,7 @@ export function useVoiceSession() {
 
       voiceClientRef.current = client;
       setIsSessionActive(true);
-      addMessage("agent", "Voice session live. Ask for a market brief anytime.");
+      addMessage(Role.assistant, "Voice session live. Ask for a market brief anytime.");
       setStatus("Voice session active.");
     } catch (error: any) {
       setStatus(`Voice session error: ${formatErr(error)}`);
@@ -125,7 +185,6 @@ export function useVoiceSession() {
     }
     setIsSessionActive(false);
     setStatus("Session stopped.");
-    await persistConversation();
   };
 
   const toggleVoice = () => {
@@ -136,13 +195,90 @@ export function useVoiceSession() {
     }
   };
 
+  const callTool = async (name: string, args: any, formatResult?: (res: any) => string) => {
+    const toolCallId = nanoid();
+    try {
+      const id = await ensureConversation();
+      setStatus(`Calling ${name}...`);
+      const res = await fetchJson("/api/vapi/webhook", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, arguments: args }),
+      });
+      const resultText =
+        (formatResult && formatResult(res)) ||
+        (typeof res === "string" ? res : JSON.stringify(res));
+      await addMessage(Role.assistant, resultText, {
+        toolName: name,
+        toolResultJson: res,
+        toolArgsJson: args,
+        toolCallId,
+        ensureConversation: true,
+      });
+      setStatus(`Got ${name} result`);
+      await loadHistory();
+      return res;
+    } catch (error: any) {
+      setStatus(`Tool error: ${formatErr(error)}`);
+      await addMessage(Role.assistant, `Error: ${formatErr(error)}`, {
+        toolName: name,
+        toolResultJson: { error: formatErr(error) },
+        toolArgsJson: args,
+        toolCallId,
+        ensureConversation: true,
+      });
+    }
+  };
+
+  const fetchQuote = async (ticker: string) => {
+    if (!ticker) return;
+    await callTool("get_quote", { ticker }, (res) => {
+      if (res?.ok && res?.data) {
+        const { ticker: t, price, change, changePercent, name } = res.data;
+        return `${name ? name + " " : ""}${t}: ${price} (${change}, ${changePercent}%)`;
+      }
+      return typeof res === "string" ? res : JSON.stringify(res);
+    });
+  };
+
+  const fetchNews = async (ticker?: string) => {
+    await callTool("get_news", ticker ? { ticker } : {}, (res) => {
+      if (res?.ok && res?.data?.headlines?.length) {
+        const top = res.data.headlines
+          .slice(0, 3)
+          .map((h: any) => h.title)
+          .join(" | ");
+        return `Headlines${ticker ? " for " + ticker : ""}: ${top}`;
+      }
+      return typeof res === "string" ? res : JSON.stringify(res);
+    });
+  };
+
+  const fetchTodayBrief = async () => {
+    await callTool("get_today_brief", {}, (res) => {
+      if (res?.ok && res?.data) {
+        return res.data.summary || "Brief ready";
+      }
+      return typeof res === "string" ? res : JSON.stringify(res);
+    });
+  };
+
+  const selectConversation = async (id: string) => {
+    await loadConversation(id);
+  };
+
   return {
     isSessionActive,
     status,
     transcript,
     history,
+    conversationId,
     toggleVoice,
     startVoiceSession,
     stopVoiceSession,
+    selectConversation,
+    fetchQuote,
+    fetchNews,
+    fetchTodayBrief,
   };
 }
