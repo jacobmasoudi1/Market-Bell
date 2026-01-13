@@ -2,11 +2,8 @@ import { prisma } from "@/lib/prisma";
 
 
 export async function getOrCreateDefaultUser() {
-  const userId = "default-user";
-  await prisma.user.upsert({
-    where: { id: userId },
-    update: {},
-    create: { id: userId },
-  });
-  return userId;
+  const existing = await prisma.user.findFirst({ select: { id: true } });
+  if (existing) return existing.id;
+  const created = await prisma.user.create({ data: {} });
+  return created.id;
 }
