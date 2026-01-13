@@ -13,11 +13,12 @@ async function ensureUser() {
   return DEMO_USER_ID;
 }
 
-export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const { id } = await params;
     const userId = await ensureUser();
     const convo = await prisma.conversation.findFirst({
-      where: { id: params.id, userId },
+      where: { id, userId },
       select: { id: true },
     });
     if (!convo) {
