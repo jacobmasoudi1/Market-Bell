@@ -267,6 +267,14 @@ export function useVoiceSession() {
     await loadConversation(id);
   };
 
+  const startNewConversation = async () => {
+    setTranscript([]);
+    localStorage.removeItem("conversationId");
+    setConversationId(null);
+    await ensureConversation();
+    await loadHistory();
+  };
+
   return {
     isSessionActive,
     status,
@@ -277,6 +285,7 @@ export function useVoiceSession() {
     startVoiceSession,
     stopVoiceSession,
     selectConversation,
+    startNewConversation,
     fetchQuote,
     fetchNews,
     fetchTodayBrief,

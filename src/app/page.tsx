@@ -22,6 +22,7 @@ export default function Home() {
     fetchQuote,
     fetchNews,
     fetchTodayBrief,
+    startNewConversation,
   } = useVoiceSession();
 
   const [quoteTicker, setQuoteTicker] = useState("AAPL");
@@ -123,23 +124,29 @@ export default function Home() {
           <TranscriptList transcript={transcript} />
           <div className="space-y-4 lg:col-span-1">
             <HistoryList history={history} />
-            <div className="rounded-xl bg-white p-4 shadow-sm">
-              <div className="text-sm text-slate-600">
-                Tap a conversation to load:
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {history.map((h) => (
-                    <button
-                      key={h.id}
-                      onClick={() => selectConversation(h.id)}
-                      className="rounded border border-slate-200 px-3 py-1 text-sm hover:border-slate-400"
-                    >
-                      {h.title || h.id.slice(0, 6)} ({h.createdAt?.slice(0, 10)})
-                    </button>
-                  ))}
-                  {!history.length && (
-                    <div className="text-xs text-slate-500">No conversations yet.</div>
-                  )}
-                </div>
+            <div className="rounded-xl bg-white p-4 shadow-sm space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="text-sm text-slate-600">Tap a conversation to load</div>
+                <button
+                  onClick={startNewConversation}
+                  className="rounded bg-slate-100 px-3 py-1 text-xs text-slate-800 hover:bg-slate-200"
+                >
+                  New conversation
+                </button>
+              </div>
+              <div className="mt-1 flex flex-wrap gap-2">
+                {history.map((h) => (
+                  <button
+                    key={h.id}
+                    onClick={() => selectConversation(h.id)}
+                    className="rounded border border-slate-200 px-3 py-1 text-sm hover:border-slate-400"
+                  >
+                    {h.title || h.id.slice(0, 6)} ({h.createdAt?.slice(0, 10)})
+                  </button>
+                ))}
+                {!history.length && (
+                  <div className="text-xs text-slate-500">No conversations yet.</div>
+                )}
               </div>
             </div>
           </div>
