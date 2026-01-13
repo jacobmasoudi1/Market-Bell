@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { corsResponse, corsOptionsResponse } from "@/lib/cors";
 
 type VapiCallResponse = {
   id: string;
@@ -10,9 +11,9 @@ export async function POST() {
   const assistantId = process.env.NEXT_PUBLIC_VAPI_ASSISTANT_ID;
 
   if (!apiKey || !assistantId) {
-    return NextResponse.json(
+    return corsResponse(
       { error: "Missing VAPI_SECRET_KEY or NEXT_PUBLIC_VAPI_ASSISTANT_ID" },
-      { status: 500 },
+      500
     );
   }
 
@@ -28,26 +29,30 @@ export async function POST() {
 
     if (!res.ok) {
       const errText = await res.text();
-      return NextResponse.json(
+      return corsResponse(
         { error: `Vapi call failed: ${errText || res.statusText}` },
-        { status: res.status },
+        res.status
       );
     }
 
     const data = (await res.json()) as VapiCallResponse;
     if (!data.clientUrl) {
-      return NextResponse.json(
+      return corsResponse(
         { error: "Vapi response missing clientUrl" },
-        { status: 500 },
+        500
       );
     }
 
-    return NextResponse.json({ clientUrl: data.clientUrl, callId: data.id });
+    return corsResponse({ clientUrl: data.clientUrl, callId: data.id });
   } catch (err) {
     console.error("Vapi token error", err);
-    return NextResponse.json(
+    return corsResponse(
       { error: "Unable to create Vapi call token" },
-      { status: 500 },
+      500
     );
   }
+}
+
+export async function OPTIONS() {
+  return corsOptionsResponse();
 }

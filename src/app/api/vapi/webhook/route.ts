@@ -10,11 +10,65 @@ import {
 } from "@/lib/watchlist";
 import { getOrCreateDefaultUser } from "@/lib/user";
 import { getOrCreateProfile } from "@/lib/profile";
+import { getCorsHeaders, corsOptionsResponse } from "@/lib/cors";
 
 type ToolArgs = Record<string, any>;
 
-function wrap<T>(resp: ToolResponse<T>) {
-  return NextResponse.json(resp);
+// Convert response data to a single-line string for Vapi
+function formatResult<T>(resp: ToolResponse<T>): string {
+  if (!resp.ok) {
+    return resp.error || "An error occurred";
+  }
+  if (!resp.data) {
+    return "No data available";
+  }
+
+  const data = resp.data as any;
+
+  // Format quote data naturally
+  if (data.ticker && typeof data.price === "number") {
+    const change = data.change >= 0 ? `+${data.change}` : `${data.change}`;
+    const changePercent = data.changePercent >= 0 ? `+${data.changePercent.toFixed(2)}%` : `${data.changePercent.toFixed(2)}%`;
+    return `${data.ticker} is trading at $${data.price.toFixed(2)}, ${change} (${changePercent})`;
+  }
+
+  // Format watchlist items
+  if (data.items && Array.isArray(data.items)) {
+    if (data.items.length === 0) return "Watchlist is empty";
+    return `Watchlist: ${data.items.map((item: any) => item.ticker).join(", ")}`;
+  }
+
+  // Format added/removed ticker
+  if (data.added) return `Added ${data.added} to watchlist`;
+  if (data.removed) return `Removed ${data.removed} from watchlist`;
+
+  // Format today's brief summary
+  if (data.summary) return data.summary;
+
+  // For other data, convert to JSON string (single-line)
+  return JSON.stringify(data).replace(/\n/g, " ").replace(/\s+/g, " ").trim();
+}
+
+// Wrap response in Vapi's expected format
+function wrapVapiResponse<T>(toolCallId: string, resp: ToolResponse<T>) {
+  const result = formatResult(resp);
+  // Always return 200 status - Vapi ignores other status codes
+  return NextResponse.json(
+    {
+      results: [
+        {
+          toolCallId,
+          result,
+        },
+      ],
+    },
+    { status: 200, headers: getCorsHeaders() }
+  );
+}
+
+// Handle OPTIONS preflight requests
+export async function OPTIONS() {
+  return corsOptionsResponse();
 }
 
 function getWatchlistData() {
@@ -125,19 +179,32 @@ export async function POST(req: NextRequest) {
 
   const name = body?.name || body?.tool;
   const args: ToolArgs = body?.arguments ?? body?.args ?? {};
+  const toolCallId = body?.toolCallId || body?.id || "unknown";
 
   if (!name) {
     console.error("Webhook missing tool name", body);
-    return NextResponse.json({ error: "Missing tool name", received: body }, { status: 400 });
+    // Vapi requires 200 status even for errors
+    return NextResponse.json(
+      {
+        results: [
+          {
+            toolCallId,
+            result: "Error: Missing tool name",
+          },
+        ],
+      },
+      { status: 200, headers: getCorsHeaders() }
+    );
   }
 
   switch (name) {
     case "get_quote": {
       const ticker = String(args.ticker ?? "AAPL").toUpperCase();
-      return wrap(await getQuote(ticker));
+      return wrapVapiResponse(toolCallId, await getQuote(ticker));
     }
     case "get_top_movers": {
-      return wrap(
+      return wrapVapiResponse(
+        toolCallId,
         await getMovers({
           direction: args.direction === "losers" ? "losers" : "gainers",
           limit: args.limit,
@@ -148,34 +215,37 @@ export async function POST(req: NextRequest) {
       try {
         const userId = await getOrCreateDefaultUser();
         if (!isValidTicker(args.ticker)) {
-          return wrap({ ok: false, error: "Ticker not recognized. Please spell it letter-by-letter." });
+          return wrapVapiResponse(toolCallId, {
+            ok: false,
+            error: "Ticker not recognized. Please spell it letter-by-letter.",
+          });
         }
         const item = await addWatchlistItem(userId, args.ticker, args.reason);
-        return wrap({ ok: true, data: { added: item.ticker } });
+        return wrapVapiResponse(toolCallId, { ok: true, data: { added: item.ticker } });
       } catch (err: any) {
-        return wrap({ ok: false, error: err.message });
+        return wrapVapiResponse(toolCallId, { ok: false, error: err.message });
       }
     }
     case "get_watchlist": {
       try {
         const userId = await getOrCreateDefaultUser();
         const items = await listWatchlist(userId);
-        return wrap({ ok: true, data: { items } });
+        return wrapVapiResponse(toolCallId, { ok: true, data: { items } });
       } catch (err: any) {
-        return wrap({ ok: false, error: err.message });
+        return wrapVapiResponse(toolCallId, { ok: false, error: err.message });
       }
     }
     case "remove_from_watchlist": {
       try {
         const userId = await getOrCreateDefaultUser();
         const removed = await removeWatchlistItem(userId, args.ticker);
-        return wrap({ ok: true, data: { removed } });
+        return wrapVapiResponse(toolCallId, { ok: true, data: { removed } });
       } catch (err: any) {
-        return wrap({ ok: false, error: err.message });
+        return wrapVapiResponse(toolCallId, { ok: false, error: err.message });
       }
     }
     case "save_user_profile": {
-      return wrap({ ok: false, error: "Not implemented in webhook" });
+      return wrapVapiResponse(toolCallId, { ok: false, error: "Not implemented in webhook" });
     }
     case "get_user_profile": {
       const userId = "demo-user";
@@ -183,7 +253,7 @@ export async function POST(req: NextRequest) {
         where: { userId },
       });
       if (!dbProfile) {
-        return wrap({
+        return wrapVapiResponse(toolCallId, {
           ok: true,
           data: {
             riskTolerance: "medium",
@@ -193,7 +263,7 @@ export async function POST(req: NextRequest) {
           },
         });
       }
-      return wrap({
+      return wrapVapiResponse(toolCallId, {
         ok: true,
         data: {
           riskTolerance: dbProfile.riskTolerance,
@@ -206,7 +276,8 @@ export async function POST(req: NextRequest) {
       });
     }
     case "get_news": {
-      return wrap(
+      return wrapVapiResponse(
+        toolCallId,
         await getNews({
           ticker: isValidTicker(args.ticker) ? args.ticker : undefined,
           limit: args.limit,
@@ -214,13 +285,20 @@ export async function POST(req: NextRequest) {
       );
     }
     case "get_today_brief": {
-      return wrap(await getTodayBrief(args));
+      return wrapVapiResponse(toolCallId, await getTodayBrief(args));
     }
     default:
       console.error("Webhook unknown tool", name, body);
       return NextResponse.json(
-        { error: `Unknown tool: ${name}`, received: body },
-        { status: 400 },
+        {
+          results: [
+            {
+              toolCallId,
+              result: `Unknown tool: ${name}`,
+            },
+          ],
+        },
+        { status: 200, headers: getCorsHeaders() }
       );
   }
 }

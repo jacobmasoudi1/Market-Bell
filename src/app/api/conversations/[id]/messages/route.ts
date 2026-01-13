@@ -1,8 +1,9 @@
-"/* eslint-disable @typescript-eslint/no-explicit-any */"
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { Role } from "@prisma/client";
 import { requireUserId } from "@/lib/auth-session";
+import { corsResponse, corsOptionsResponse } from "@/lib/cors";
 
 const buildTitle = (text: string) => {
   const sanitized = text.replace(/\s+/g, " ").trim();
@@ -20,7 +21,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       select: { id: true, title: true },
     });
     if (!convo) {
-      return NextResponse.json({ ok: false, error: "Conversation not found" }, { status: 404 });
+      return corsResponse({ ok: false, error: "Conversation not found" }, 404);
     }
 
     const body = await req.json();
@@ -28,7 +29,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const text = body.text as string;
 
     if (!role || !text) {
-      return NextResponse.json({ ok: false, error: "role and text required" }, { status: 400 });
+      return corsResponse({ ok: false, error: "role and text required" }, 400);
     }
 
     const titleUpdate =
@@ -55,11 +56,15 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       }),
     ]);
 
-    return NextResponse.json({ ok: true, message });
+    return corsResponse({ ok: true, message });
   } catch (err: any) {
     if (err?.message === "Unauthorized") {
-      return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+      return corsResponse({ ok: false, error: "Unauthorized" }, 401);
     }
-    return NextResponse.json({ ok: false, error: err.message }, { status: 500 });
+    return corsResponse({ ok: false, error: err.message }, 500);
   }
+}
+
+export async function OPTIONS() {
+  return corsOptionsResponse();
 }

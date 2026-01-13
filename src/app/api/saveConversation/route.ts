@@ -1,7 +1,8 @@
-"/* eslint-disable @typescript-eslint/no-explicit-any */"
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { Role } from "@prisma/client";
+import { corsResponse, corsOptionsResponse } from "@/lib/cors";
 
 const DEMO_USER_ID = "demo-user";
 
@@ -42,8 +43,12 @@ export async function POST(req: Request) {
       });
     }
 
-    return NextResponse.json({ ok: true, conversationId: conversation.id });
+    return corsResponse({ ok: true, conversationId: conversation.id });
   } catch (err: any) {
-    return NextResponse.json({ ok: false, error: err.message }, { status: 500 });
+    return corsResponse({ ok: false, error: err.message }, 500);
   }
+}
+
+export async function OPTIONS() {
+  return corsOptionsResponse();
 }

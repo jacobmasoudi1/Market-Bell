@@ -1,7 +1,8 @@
-"/* eslint-disable @typescript-eslint/no-explicit-any */"
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireUserId } from "@/lib/auth-session";
+import { corsResponse, corsOptionsResponse } from "@/lib/cors";
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -16,13 +17,17 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       },
     });
     if (!convo) {
-      return NextResponse.json({ ok: false, error: "Conversation not found" }, { status: 404 });
+      return corsResponse({ ok: false, error: "Conversation not found" }, 404);
     }
-    return NextResponse.json({ ok: true, conversation: convo });
+    return corsResponse({ ok: true, conversation: convo });
   } catch (err: any) {
     if (err?.message === "Unauthorized") {
-      return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+      return corsResponse({ ok: false, error: "Unauthorized" }, 401);
     }
-    return NextResponse.json({ ok: false, error: err.message }, { status: 500 });
+    return corsResponse({ ok: false, error: err.message }, 500);
   }
+}
+
+export async function OPTIONS() {
+  return corsOptionsResponse();
 }

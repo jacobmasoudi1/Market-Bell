@@ -1,19 +1,20 @@
-"/* eslint-disable @typescript-eslint/no-explicit-any */"
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextResponse } from "next/server";
 import { requireUserId } from "@/lib/auth-session";
 import { getOrCreateProfile, sanitizeProfile } from "@/lib/profile";
 import { prisma } from "@/lib/prisma";
+import { corsResponse, corsOptionsResponse } from "@/lib/cors";
 
 export async function GET() {
   try {
     const userId = await requireUserId();
     const profile = await getOrCreateProfile(userId);
-    return NextResponse.json({ ok: true, profile });
+    return corsResponse({ ok: true, profile });
   } catch (err: any) {
     if (err?.message === "Unauthorized") {
-      return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+      return corsResponse({ ok: false, error: "Unauthorized" }, 401);
     }
-    return NextResponse.json({ ok: false, error: err.message }, { status: 500 });
+    return corsResponse({ ok: false, error: err.message }, 500);
   }
 }
 
@@ -27,11 +28,15 @@ export async function POST(request: Request) {
       where: { userId },
       data,
     });
-    return NextResponse.json({ ok: true, profile: updated });
+    return corsResponse({ ok: true, profile: updated });
   } catch (err: any) {
     if (err?.message === "Unauthorized") {
-      return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+      return corsResponse({ ok: false, error: "Unauthorized" }, 401);
     }
-    return NextResponse.json({ ok: false, error: err.message }, { status: 500 });
+    return corsResponse({ ok: false, error: err.message }, 500);
   }
+}
+
+export async function OPTIONS() {
+  return corsOptionsResponse();
 }
