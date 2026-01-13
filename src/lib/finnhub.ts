@@ -6,6 +6,9 @@ const DEFAULT_UNIVERSE = ["AAPL", "MSFT", "NVDA", "AMZN", "META", "TSLA", "GOOGL
 export const isValidTicker = (value?: string) =>
   !!value && /^[A-Z.\-]{1,10}$/.test(value.trim().toUpperCase());
 
+const invalidTickerError =
+  "Ticker not recognized. Please spell it letter-by-letter (e.g., A-P-L).";
+
 async function finnhubFetch<T>(path: string, params: Record<string, any>): Promise<T> {
   const token = process.env.FINNHUB_API_KEY?.trim();
   if (!token) {
@@ -52,7 +55,7 @@ async function getProfile(symbol: string): Promise<{ name?: string; logo?: strin
 export async function getQuote(symbol: string): Promise<ToolResponse<QuoteData & { name?: string; logo?: string }>> {
   const ticker = symbol.toUpperCase();
   if (!isValidTicker(ticker)) {
-    return { ok: false, error: "Invalid ticker" };
+    return { ok: false, error: invalidTickerError };
   }
   try {
     const profile = await getProfile(ticker);
@@ -134,6 +137,10 @@ export async function getNews(params: {
   const allowTicker = !ticker || isValidTicker(ticker);
 
   try {
+    if (tickerRaw && !allowTicker) {
+      return { ok: false, error: invalidTickerError, data: { ticker: tickerRaw, headlines: [] } };
+    }
+
     const news = allowTicker && ticker
       ? await finnhubFetch<any[]>("/company-news", {
           symbol: ticker,

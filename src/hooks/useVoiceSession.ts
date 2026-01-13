@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
 import { useEffect, useRef, useState } from "react";
@@ -11,6 +12,7 @@ export type HistoryEntry = {
   title?: string;
   createdAt?: string;
   summary?: string;
+  lastMessageAt?: string;
 };
 
 const formatErr = (e: any) => {
@@ -146,11 +148,17 @@ export function useVoiceSession() {
       const client = new Vapi(publicKey);
       client.on?.("message", (payload: any = {}) => {
         const text = payload?.message || payload?.text || payload?.content;
+        console.log("[Vapi] message", payload);
         if (text) addMessage(Role.assistant, text);
       });
-      client.on?.("call-end", () => {
+      client.on?.("call-end", (info: any) => {
+        console.log("[Vapi] call-end", info);
         setIsSessionActive(false);
         setStatus("Session stopped.");
+      });
+      client.on?.("error", (err: any) => {
+        console.error("[Vapi] error", err);
+        setStatus("Voice session error. Tap to retry.");
       });
 
       const assistantId =
@@ -168,6 +176,7 @@ export function useVoiceSession() {
       addMessage(Role.assistant, "Voice session live. Ask for a market brief anytime.");
       setStatus("Voice session active.");
     } catch (error: any) {
+      console.error("[Vapi] start/connect error", error);
       setStatus(`Voice session error: ${formatErr(error)}`);
     }
   };

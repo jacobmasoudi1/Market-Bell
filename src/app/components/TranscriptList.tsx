@@ -1,22 +1,34 @@
 "use client";
 
+import { useState } from "react";
 import { TranscriptEntry } from "@/hooks/useVoiceSession";
 
 type Props = {
   transcript: TranscriptEntry[];
+  title?: string;
 };
 
-export function TranscriptList({ transcript }: Props) {
+export function TranscriptList({ transcript, title }: Props) {
+  const [showAll, setShowAll] = useState(false);
+  const displayed = showAll ? transcript : transcript.slice(-12);
+
   return (
-    <section className="rounded-xl bg-white p-6 shadow-sm">
+    <section className="rounded-2xl bg-white p-6 shadow-sm">
       <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold">Conversation Transcript</h2>
+        <div>
+          <h2 className="text-xl font-semibold">Live Transcript</h2>
+          {title && <p className="text-sm text-slate-500">{title}</p>}
+        </div>
         <span className="text-sm text-slate-500">
-          {transcript.length ? `${transcript.length} messages` : "Live"}
+          {transcript.length
+            ? showAll
+              ? `${transcript.length} messages`
+              : `Showing latest ${displayed.length} of ${transcript.length}`
+            : "Listening…"}
         </span>
       </div>
-      <div className="mt-4 space-y-3 max-h-[360px] overflow-y-auto pr-2">
-        {transcript.map((entry, idx) => (
+      <div className="mt-4 space-y-3 max-h-[460px] min-h-[260px] overflow-y-auto pr-2">
+        {displayed.map((entry, idx) => (
           <div key={idx} className="flex gap-3 rounded-lg bg-slate-50 px-3 py-2">
             <span
               className={`text-xs font-semibold uppercase px-2 py-1 rounded ${
@@ -33,9 +45,19 @@ export function TranscriptList({ transcript }: Props) {
           </div>
         ))}
         {!transcript.length && (
-          <div className="text-sm text-slate-500">No messages yet. Start a session to begin.</div>
+          <div className="text-sm text-slate-500">No messages yet. Start talking to begin.</div>
         )}
       </div>
+      {transcript.length > 12 && (
+        <div className="mt-4 flex justify-end">
+          <button
+            onClick={() => setShowAll((v) => !v)}
+            className="text-sm font-semibold text-blue-700 hover:underline"
+          >
+            {showAll ? "Show latest only" : "Show full transcript"}
+          </button>
+        </div>
+      )}
     </section>
   );
 }

@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
 import { HistoryList } from "./components/HistoryList";
@@ -5,6 +6,7 @@ import { SessionHeader } from "./components/SessionHeader";
 import { TranscriptList } from "./components/TranscriptList";
 import { useVoiceSession } from "@/hooks/useVoiceSession";
 import { useEffect, useState } from "react";
+import { signIn, signOut, useSession } from "next-auth/react";
 import { ProfileForm, Profile } from "./components/ProfileForm";
 import { ProfileSummary } from "./components/ProfileSummary";
 import { fetchJson } from "@/lib/fetchJson";
@@ -29,127 +31,219 @@ export default function Home() {
   const [newsTicker, setNewsTicker] = useState("");
   const [profile, setProfile] = useState<Profile | null>(null);
   const [showProfileForm, setShowProfileForm] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [authError, setAuthError] = useState(false);
+  const { data: session, status: authStatus } = useSession();
+  const signedIn = authStatus === "authenticated" && Boolean(session?.user?.id);
+  const profileComplete = Boolean(profile?.riskTolerance && profile?.horizon);
+  const hasAssistantReply = transcript.some((t) => t.role === "assistant");
+  const shouldShowProfileForm = showProfileForm || !profileComplete;
+  const currentConversation = conversationId
+    ? history.find((h) => h.id === conversationId)
+    : null;
+  const transcriptTitle =
+    currentConversation?.title ||
+    (conversationId ? `Conversation ${conversationId.slice(0, 6)}` : "New conversation");
+  const displayName = session?.user?.name || session?.user?.email || "there";
 
   useEffect(() => {
     const loadProfile = async () => {
+      if (!signedIn) return;
       try {
         const res = await fetchJson("/api/profile");
         setProfile(res?.profile || null);
         if (!res?.profile?.riskTolerance || !res?.profile?.horizon) {
           setShowProfileForm(true);
         }
-      } catch {
+      } catch (err) {
+        console.error("Profile load failed", err);
+        setAuthError(true);
         setShowProfileForm(true);
       }
     };
     loadProfile();
-  }, []);
+  }, [signedIn]);
 
   const handleProfileSaved = (p: Profile) => {
     setProfile(p);
     setShowProfileForm(false);
   };
 
-  return (
-    <div className="min-h-screen bg-slate-50 text-slate-900">
-      <div className="mx-auto max-w-6xl px-6 py-10 space-y-6">
-        <div className="grid gap-4 lg:grid-cols-3">
-          <section className="rounded-xl bg-white p-6 shadow-sm lg:col-span-2">
-            <SessionHeader
-              isSessionActive={isSessionActive}
-              status={status}
-              onToggle={toggleVoice}
-            />
-            <p className="mt-2 text-sm text-slate-600">Your conversation is saved automatically.</p>
-            <div className="mt-4 flex flex-wrap items-center gap-2 text-xs text-slate-500">
-              <span className="rounded bg-slate-100 px-2 py-1">
-                Conversation ID: {conversationId ?? "none"}
-              </span>
-            </div>
-          </section>
+  const handleToggleVoice = () => {
+    if (!signedIn) {
+      signIn("google");
+      return;
+    }
+    setHistoryOpen(true);
+    toggleVoice();
+  };
 
-          <section className="rounded-xl bg-white p-6 shadow-sm space-y-3">
-            <div className="text-sm font-semibold text-slate-800">Quick tools (non-voice)</div>
-            <div className="flex items-center gap-2">
-              <input
-                value={quoteTicker}
-                onChange={(e) => setQuoteTicker(e.target.value.toUpperCase())}
-                className="w-24 rounded border border-slate-200 px-3 py-2 text-sm"
-                placeholder="Ticker"
-              />
-              <button
-                onClick={() => fetchQuote(quoteTicker)}
-                className="rounded-lg bg-slate-800 px-3 py-2 text-white text-sm hover:bg-slate-900"
-              >
-                Quote
-              </button>
-            </div>
-            <div className="flex items-center gap-2">
-              <input
-                value={newsTicker}
-                onChange={(e) => setNewsTicker(e.target.value.toUpperCase())}
-                className="w-24 rounded border border-slate-200 px-3 py-2 text-sm"
-                placeholder="Ticker"
-              />
-              <button
-                onClick={() => fetchNews(newsTicker || undefined)}
-                className="rounded-lg bg-slate-800 px-3 py-2 text-white text-sm hover:bg-slate-900"
-              >
-                News
-              </button>
-            </div>
-            <div>
-              <button
-                onClick={fetchTodayBrief}
-                className="w-full rounded-lg bg-blue-600 px-3 py-2 text-white text-sm hover:bg-blue-700"
-              >
-                Today&apos;s Brief
-              </button>
-            </div>
-          </section>
+  if (authStatus === "loading") {
+    return (
+      <div className="min-h-screen bg-slate-950 text-white flex items-center justify-center px-6">
+        <div className="rounded-2xl bg-white/10 px-6 py-5 shadow-lg text-center text-sm text-slate-200">
+          Checking your session…
         </div>
+      </div>
+    );
+  }
 
-        <div className="grid gap-4 lg:grid-cols-3">
-          <div className="lg:col-span-2 space-y-4">
-            {showProfileForm || !profile?.riskTolerance || !profile?.horizon ? (
-              <ProfileForm initialProfile={profile} onSaved={handleProfileSaved} />
-            ) : (
-              <ProfileSummary profile={profile} onEdit={() => setShowProfileForm(true)} />
-            )}
+  if (!signedIn) {
+    return (
+      <div className="min-h-screen bg-slate-950 text-white flex items-center justify-center px-6">
+        <div className="max-w-md w-full space-y-4 text-center">
+          <SessionHeader isSessionActive={false} status="Sign in required" onToggle={() => {}} />
+          <div className="rounded-2xl bg-white/10 p-6 shadow-lg space-y-3">
+            <h2 className="text-xl font-semibold">Sign in to continue</h2>
+            <p className="text-sm text-slate-300">
+              Sign in with Google to access your conversations, preferences, and watchlist.
+            </p>
+            <button
+              onClick={() => signIn("google")}
+              className="w-full rounded-lg bg-white text-slate-900 px-4 py-2 text-sm font-semibold hover:bg-slate-200 transition"
+            >
+              Sign in with Google
+            </button>
           </div>
-          <Watchlist />
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-slate-950 text-white">
+      <div className="mx-auto max-w-6xl px-4 sm:px-6 py-10 space-y-6">
+        <SessionHeader isSessionActive={isSessionActive} status={status} onToggle={handleToggleVoice} />
+
+        <div className="flex flex-wrap items-center gap-2 text-xs text-slate-300">
+          <span className="rounded bg-white/10 px-2 py-1">Conversation ID: {conversationId ?? "none"}</span>
+          <span className="rounded bg-white/10 px-2 py-1">Auto-saved while you talk</span>
+          <button
+            onClick={() => setHistoryOpen((v) => !v)}
+            className="rounded bg-white/10 px-2 py-1 text-xs hover:bg-white/20 transition"
+          >
+            {historyOpen ? "Hide history" : "Show history"}
+          </button>
+          <span className="ml-auto flex items-center gap-2">
+            {signedIn ? (
+              <>
+                <span className="text-slate-200">Welcome, {displayName}</span>
+                <span className="text-slate-400">{session?.user?.email}</span>
+                <button
+                  onClick={() => signOut()}
+                  className="rounded bg-white/10 px-2 py-1 text-xs hover:bg-white/20 transition"
+                >
+                  Sign out
+                </button>
+              </>
+            ) : (
+              <button
+                onClick={() => signIn("google")}
+                className="rounded bg-white/10 px-2 py-1 text-xs hover:bg-white/20 transition"
+              >
+                Sign in with Google
+              </button>
+            )}
+          </span>
         </div>
 
-        <div className="grid gap-4 lg:grid-cols-3">
-          <TranscriptList transcript={transcript} />
-          <div className="space-y-4 lg:col-span-1">
-            <HistoryList history={history} />
-            <div className="rounded-xl bg-white p-4 shadow-sm space-y-2">
-              <div className="flex items-center justify-between">
-                <div className="text-sm text-slate-600">Tap a conversation to load</div>
+        <div className="grid gap-6 lg:grid-cols-[260px_1fr_320px] items-start">
+          <aside
+            className={`space-y-4 transition-all duration-300 ${
+              historyOpen ? "opacity-100" : "opacity-0 pointer-events-none"
+            }`}
+          >
+            <HistoryList history={history} onSelect={selectConversation} onNew={startNewConversation} />
+          </aside>
+
+          <div className="space-y-4">
+            <TranscriptList transcript={transcript} title={transcriptTitle} />
+
+            {profileComplete && !shouldShowProfileForm && hasAssistantReply && (
+              <div className="rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-slate-700 shadow-sm">
+                Want more tailored answers?{" "}
                 <button
-                  onClick={startNewConversation}
-                  className="rounded bg-slate-100 px-3 py-1 text-xs text-slate-800 hover:bg-slate-200"
+                  onClick={() => setShowProfileForm(true)}
+                  className="font-semibold text-blue-700 underline underline-offset-2"
                 >
-                  New conversation
+                  Set your preferences.
                 </button>
               </div>
-              <div className="mt-1 flex flex-wrap gap-2">
-                {history.map((h) => (
-                  <button
-                    key={h.id}
-                    onClick={() => selectConversation(h.id)}
-                    className="rounded border border-slate-200 px-3 py-1 text-sm hover:border-slate-400"
-                  >
-                    {h.title || h.id.slice(0, 6)} ({h.createdAt?.slice(0, 10)})
-                  </button>
-                ))}
-                {!history.length && (
-                  <div className="text-xs text-slate-500">No conversations yet.</div>
-                )}
-              </div>
-            </div>
+            )}
           </div>
+
+          <aside className="space-y-4">
+            {!signedIn || authStatus === "loading" ? (
+              <div className="rounded-xl bg-white/10 p-5 shadow-sm text-sm text-slate-200">
+                <div className="font-semibold mb-2">Sign in required</div>
+                <p className="text-xs text-slate-300">
+                  Sign in to save preferences, watchlist, and conversations.
+                </p>
+                <div className="mt-3">
+                  <button
+                    onClick={() => signIn("google")}
+                    className="rounded bg-white text-slate-900 px-3 py-2 text-sm hover:bg-slate-200"
+                  >
+                    Sign in with Google
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <>
+                {!shouldShowProfileForm && profile && (
+                  <ProfileSummary profile={profile} onEdit={() => setShowProfileForm(true)} />
+                )}
+                {shouldShowProfileForm && (
+                  <ProfileForm initialProfile={profile} onSaved={handleProfileSaved} />
+                )}
+
+                <Watchlist />
+
+                <details className="rounded-xl bg-white/10 p-5 shadow-sm space-y-3 text-white" open>
+                  <summary className="text-sm font-semibold cursor-pointer">
+                    Quick tools (optional)
+                  </summary>
+                  <p className="text-xs text-slate-300">Use when you can’t speak.</p>
+                  <div className="flex items-center gap-2">
+                    <input
+                      value={quoteTicker}
+                      onChange={(e) => setQuoteTicker(e.target.value.toUpperCase())}
+                      className="w-24 rounded border border-white/20 bg-white/5 px-3 py-2 text-sm"
+                      placeholder="Ticker"
+                    />
+                    <button
+                      onClick={() => fetchQuote(quoteTicker)}
+                      className="rounded-lg bg-white text-slate-900 px-3 py-2 text-sm hover:bg-slate-200"
+                    >
+                      Quote
+                    </button>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      value={newsTicker}
+                      onChange={(e) => setNewsTicker(e.target.value.toUpperCase())}
+                      className="w-24 rounded border border-white/20 bg-white/5 px-3 py-2 text-sm"
+                      placeholder="Ticker"
+                    />
+                    <button
+                      onClick={() => fetchNews(newsTicker || undefined)}
+                      className="rounded-lg bg-white text-slate-900 px-3 py-2 text-sm hover:bg-slate-200"
+                    >
+                      News
+                    </button>
+                  </div>
+                  <div>
+                    <button
+                      onClick={fetchTodayBrief}
+                      className="w-full rounded-lg bg-blue-500 px-3 py-2 text-white text-sm hover:bg-blue-600"
+                    >
+                      Today&apos;s Brief
+                    </button>
+                  </div>
+                </details>
+              </>
+            )}
+          </aside>
         </div>
       </div>
     </div>

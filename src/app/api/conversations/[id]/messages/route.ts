@@ -1,25 +1,23 @@
+"/* eslint-disable @typescript-eslint/no-explicit-any */"
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { Role } from "@prisma/client";
+import { requireUserId } from "@/lib/auth-session";
 
-const DEMO_USER_ID = "demo-user";
-
-async function ensureUser() {
-  await prisma.user.upsert({
-    where: { id: DEMO_USER_ID },
-    update: {},
-    create: { id: DEMO_USER_ID },
-  });
-  return DEMO_USER_ID;
-}
+const buildTitle = (text: string) => {
+  const sanitized = text.replace(/\s+/g, " ").trim();
+  if (!sanitized) return null;
+  const max = 80;
+  return sanitized.length > max ? sanitized.slice(0, max - 1) + "…" : sanitized;
+};
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params;
-    const userId = await ensureUser();
+    const userId = await requireUserId();
     const convo = await prisma.conversation.findFirst({
       where: { id, userId },
-      select: { id: true },
+      select: { id: true, title: true },
     });
     if (!convo) {
       return NextResponse.json({ ok: false, error: "Conversation not found" }, { status: 404 });
@@ -33,25 +31,35 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       return NextResponse.json({ ok: false, error: "role and text required" }, { status: 400 });
     }
 
-    const message = await prisma.message.create({
-      data: {
-        conversationId: convo.id,
-        role,
-        text,
-        toolName: body.toolName ?? null,
-        toolCallId: body.toolCallId ?? null,
-        toolArgsJson: body.toolArgsJson ?? null,
-        toolResultJson: body.toolResultJson ?? null,
-      },
-    });
+    const titleUpdate =
+      role === Role.user && (!convo.title || !convo.title.trim()) ? buildTitle(text) : null;
 
-    await prisma.conversation.update({
-      where: { id: convo.id },
-      data: { lastMessageAt: new Date() },
-    });
+    const [message] = await prisma.$transaction([
+      prisma.message.create({
+        data: {
+          conversationId: convo.id,
+          role,
+          text,
+          toolName: body.toolName ?? null,
+          toolCallId: body.toolCallId ?? null,
+          toolArgsJson: body.toolArgsJson ?? null,
+          toolResultJson: body.toolResultJson ?? null,
+        },
+      }),
+      prisma.conversation.update({
+        where: { id: convo.id },
+        data: {
+          lastMessageAt: new Date(),
+          ...(titleUpdate ? { title: titleUpdate } : {}),
+        },
+      }),
+    ]);
 
     return NextResponse.json({ ok: true, message });
   } catch (err: any) {
+    if (err?.message === "Unauthorized") {
+      return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+    }
     return NextResponse.json({ ok: false, error: err.message }, { status: 500 });
   }
 }

@@ -1,5 +1,6 @@
 "use client";
 
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { useEffect, useState } from "react";
 import { fetchJson } from "@/lib/fetchJson";
 
@@ -49,7 +50,8 @@ export function ProfileForm({ initialProfile, onSaved }: Props) {
         experience: p.experience ?? "intermediate",
       });
     } catch (err: any) {
-      setStatus(err?.message || "Failed to load profile");
+      console.error("Profile load failed", err);
+      setStatus("Couldn't load preferences. Try refresh.");
     }
   };
 
@@ -89,7 +91,8 @@ export function ProfileForm({ initialProfile, onSaved }: Props) {
       onSaved?.(p);
       setTimeout(() => setJustSaved(false), 1500);
     } catch (err: any) {
-      setStatus(err?.message || "Save failed");
+      console.error("Profile save failed", err);
+      setStatus("Save failed. Try again.");
     } finally {
       setLoading(false);
     }

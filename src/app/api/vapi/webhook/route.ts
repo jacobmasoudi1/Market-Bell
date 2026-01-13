@@ -120,9 +120,16 @@ function formatBrief(profile: Profile, gainers: Mover[], losers: Mover[], headli
 }
 
 export async function POST(req: NextRequest) {
-  const body = await req.json();
-  const name = body?.name;
-  const args: ToolArgs = body?.arguments ?? {};
+  const body = await req.json().catch(() => ({}));
+  console.log("Webhook received body:", body);
+
+  const name = body?.name || body?.tool;
+  const args: ToolArgs = body?.arguments ?? body?.args ?? {};
+
+  if (!name) {
+    console.error("Webhook missing tool name", body);
+    return NextResponse.json({ error: "Missing tool name", received: body }, { status: 400 });
+  }
 
   switch (name) {
     case "get_quote": {
@@ -140,6 +147,9 @@ export async function POST(req: NextRequest) {
     case "add_to_watchlist": {
       try {
         const userId = await getOrCreateDefaultUser();
+        if (!isValidTicker(args.ticker)) {
+          return wrap({ ok: false, error: "Ticker not recognized. Please spell it letter-by-letter." });
+        }
         const item = await addWatchlistItem(userId, args.ticker, args.reason);
         return wrap({ ok: true, data: { added: item.ticker } });
       } catch (err: any) {
@@ -207,8 +217,9 @@ export async function POST(req: NextRequest) {
       return wrap(await getTodayBrief(args));
     }
     default:
+      console.error("Webhook unknown tool", name, body);
       return NextResponse.json(
-        { error: `Unknown tool: ${name}` },
+        { error: `Unknown tool: ${name}`, received: body },
         { status: 400 },
       );
   }
