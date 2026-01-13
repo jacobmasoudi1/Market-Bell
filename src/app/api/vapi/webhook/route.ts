@@ -14,7 +14,6 @@ import { getCorsHeaders, corsOptionsResponse } from "@/lib/cors";
 
 type ToolArgs = Record<string, any>;
 
-// Convert response data to a single-line string for Vapi
 function formatResult<T>(resp: ToolResponse<T>): string {
   if (!resp.ok) {
     return resp.error || "An error occurred";
@@ -25,34 +24,27 @@ function formatResult<T>(resp: ToolResponse<T>): string {
 
   const data = resp.data as any;
 
-  // Format quote data naturally
   if (data.ticker && typeof data.price === "number") {
     const change = data.change >= 0 ? `+${data.change}` : `${data.change}`;
     const changePercent = data.changePercent >= 0 ? `+${data.changePercent.toFixed(2)}%` : `${data.changePercent.toFixed(2)}%`;
     return `${data.ticker} is trading at $${data.price.toFixed(2)}, ${change} (${changePercent})`;
   }
 
-  // Format watchlist items
   if (data.items && Array.isArray(data.items)) {
     if (data.items.length === 0) return "Watchlist is empty";
     return `Watchlist: ${data.items.map((item: any) => item.ticker).join(", ")}`;
   }
 
-  // Format added/removed ticker
   if (data.added) return `Added ${data.added} to watchlist`;
   if (data.removed) return `Removed ${data.removed} from watchlist`;
 
-  // Format today's brief summary
   if (data.summary) return data.summary;
 
-  // For other data, convert to JSON string (single-line)
   return JSON.stringify(data).replace(/\n/g, " ").replace(/\s+/g, " ").trim();
 }
 
-// Wrap response in Vapi's expected format
 function wrapVapiResponse<T>(toolCallId: string, resp: ToolResponse<T>) {
   const result = formatResult(resp);
-  // Always return 200 status - Vapi ignores other status codes
   return NextResponse.json(
     {
       results: [
@@ -66,7 +58,6 @@ function wrapVapiResponse<T>(toolCallId: string, resp: ToolResponse<T>) {
   );
 }
 
-// Handle OPTIONS preflight requests
 export async function OPTIONS() {
   return corsOptionsResponse();
 }
@@ -163,7 +154,6 @@ function formatBrief(profile: Profile, gainers: Mover[], losers: Mover[], headli
     return lines.join(" ");
   }
 
-  // default bullet
   const bullets = [
     helper(gainText, "Top gainers"),
     helper(loseText, "Top losers"),
@@ -183,7 +173,6 @@ export async function POST(req: NextRequest) {
 
   if (!name) {
     console.error("Webhook missing tool name", body);
-    // Vapi requires 200 status even for errors
     return NextResponse.json(
       {
         results: [

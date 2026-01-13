@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from "next/server";
 import { listWatchlist, addWatchlistItem, removeWatchlistItem } from "@/lib/watchlist";
 import { requireUserId } from "@/lib/auth-session";

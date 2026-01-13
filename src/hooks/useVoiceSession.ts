@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
 import { useEffect, useRef, useState } from "react";
@@ -64,7 +63,7 @@ export function useVoiceSession() {
     }
     if (targetConversationId) {
       try {
-        await fetchJson(`/api/conversations/${targetConversationId}/messages`, {
+        const result = await fetchJson(`/api/conversations/${targetConversationId}/messages`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -76,6 +75,10 @@ export function useVoiceSession() {
             toolResultJson: extras?.toolResultJson,
           }),
         });
+        if (result?.conversationId && result.conversationId !== targetConversationId) {
+          setConversationId(result.conversationId);
+          localStorage.setItem("conversationId", result.conversationId);
+        }
       } catch (err) {
         console.error("Failed to persist message", err);
       }

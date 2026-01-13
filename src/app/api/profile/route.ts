@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextResponse } from "next/server";
 import { requireUserId } from "@/lib/auth-session";
 import { getOrCreateProfile, sanitizeProfile } from "@/lib/profile";

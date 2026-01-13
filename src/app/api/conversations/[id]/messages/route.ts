@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { Role } from "@prisma/client";
@@ -16,12 +15,19 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   try {
     const { id } = await params;
     const userId = await requireUserId();
-    const convo = await prisma.conversation.findFirst({
+    let convo = await prisma.conversation.findFirst({
       where: { id, userId },
       select: { id: true, title: true },
     });
+    
     if (!convo) {
-      return corsResponse({ ok: false, error: "Conversation not found" }, 404);
+      convo = await prisma.conversation.create({
+        data: {
+          userId,
+          lastMessageAt: new Date(),
+        },
+        select: { id: true, title: true },
+      });
     }
 
     const body = await req.json();
@@ -56,7 +62,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       }),
     ]);
 
-    return corsResponse({ ok: true, message });
+    return corsResponse({ 
+      ok: true, 
+      message,
+      conversationId: convo.id,
+    });
   } catch (err: any) {
     if (err?.message === "Unauthorized") {
       return corsResponse({ ok: false, error: "Unauthorized" }, 401);

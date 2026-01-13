@@ -11,7 +11,6 @@ export async function fetchJson<T = any>(
         errorMessage = `${errorMessage}: ${errorData.error}`;
       }
     } catch {
-      // Ignore JSON parse errors
     }
     const error = new Error(errorMessage);
     (error as any).status = res.status;
