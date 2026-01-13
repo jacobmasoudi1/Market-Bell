@@ -1,9 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getQuote, getMovers, getNews, isValidTicker } from "@/lib/finnhub";
-import { addToWatchlist, getWatchlist, removeFromWatchlist } from "@/lib/watchlistStore";
 import { ToolResponse, TodayBrief, WatchItem, Profile, Mover } from "@/lib/types";
 import { getNews as getNewsHelper } from "@/lib/finnhub";
 import { prisma } from "@/lib/prisma";
+import {
+  addWatchlistItem,
+  listWatchlist,
+  removeWatchlistItem,
+} from "@/lib/watchlist";
 
 type ToolArgs = Record<string, any>;
 
@@ -12,7 +16,7 @@ function wrap<T>(resp: ToolResponse<T>) {
 }
 
 function getWatchlistData() {
-  return (getWatchlist().data?.items ?? []) as WatchItem[];
+  return [] as WatchItem[];
 }
 
 async function getTodayBrief(args: ToolArgs): Promise<ToolResponse<TodayBrief>> {
@@ -134,13 +138,28 @@ export async function POST(req: NextRequest) {
       );
     }
     case "add_to_watchlist": {
-      return wrap(addToWatchlist(args.ticker, args.reason));
+      try {
+        const item = await addWatchlistItem("demo-user", args.ticker, args.reason);
+        return wrap({ ok: true, data: { added: item.ticker } });
+      } catch (err: any) {
+        return wrap({ ok: false, error: err.message });
+      }
     }
     case "get_watchlist": {
-      return wrap(getWatchlist());
+      try {
+        const items = await listWatchlist("demo-user");
+        return wrap({ ok: true, data: { items } });
+      } catch (err: any) {
+        return wrap({ ok: false, error: err.message });
+      }
     }
     case "remove_from_watchlist": {
-      return wrap(removeFromWatchlist(args.ticker));
+      try {
+        const removed = await removeWatchlistItem("demo-user", args.ticker);
+        return wrap({ ok: true, data: { removed } });
+      } catch (err: any) {
+        return wrap({ ok: false, error: err.message });
+      }
     }
     case "save_user_profile": {
       return wrap({ ok: false, error: "Not implemented in webhook" });
