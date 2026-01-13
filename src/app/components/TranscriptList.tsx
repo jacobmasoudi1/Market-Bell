@@ -15,10 +15,20 @@ export function TranscriptList({ transcript }: Props) {
           {transcript.length ? `${transcript.length} messages` : "Live"}
         </span>
       </div>
-      <div className="mt-4 space-y-3">
+      <div className="mt-4 space-y-3 max-h-[360px] overflow-y-auto pr-2">
         {transcript.map((entry, idx) => (
-          <div key={idx} className="rounded-lg bg-slate-50 px-3 py-2">
-            <div className="text-xs uppercase text-slate-500">{entry.role}</div>
+          <div key={idx} className="flex gap-3 rounded-lg bg-slate-50 px-3 py-2">
+            <span
+              className={`text-xs font-semibold uppercase px-2 py-1 rounded ${
+                entry.role === "assistant"
+                  ? "bg-blue-100 text-blue-700"
+                  : entry.role === "tool"
+                    ? "bg-amber-100 text-amber-700"
+                    : "bg-slate-200 text-slate-700"
+              }`}
+            >
+              {entry.role}
+            </span>
             <div className="text-sm text-slate-800">{entry.text}</div>
           </div>
         ))}
