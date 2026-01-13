@@ -1,18 +1,8 @@
 import { prisma } from "@/lib/prisma";
+import { getOrCreateDefaultUser } from "@/lib/user";
 
-const DEFAULT_USER_ID = "demo-user";
-
-async function ensureUser(userId: string = DEFAULT_USER_ID) {
-  await prisma.user.upsert({
-    where: { id: userId },
-    update: {},
-    create: { id: userId },
-  });
-  return userId;
-}
-
-export async function listWatchlist(userId: string = DEFAULT_USER_ID) {
-  const uid = await ensureUser(userId);
+export async function listWatchlist(userId?: string) {
+  const uid = userId || (await getOrCreateDefaultUser());
   return prisma.watchlistItem.findMany({
     where: { userId: uid },
     orderBy: { createdAt: "desc" },
@@ -20,7 +10,7 @@ export async function listWatchlist(userId: string = DEFAULT_USER_ID) {
 }
 
 export async function addWatchlistItem(userId: string, ticker?: string, reason?: string) {
-  const uid = await ensureUser(userId);
+  const uid = userId || (await getOrCreateDefaultUser());
   const symbol = (ticker || "").toUpperCase();
   if (!symbol) throw new Error("ticker required");
   return prisma.watchlistItem.upsert({
@@ -31,7 +21,7 @@ export async function addWatchlistItem(userId: string, ticker?: string, reason?:
 }
 
 export async function removeWatchlistItem(userId: string, ticker?: string) {
-  const uid = await ensureUser(userId);
+  const uid = userId || (await getOrCreateDefaultUser());
   const symbol = (ticker || "").toUpperCase();
   if (!symbol) throw new Error("ticker required");
   await prisma.watchlistItem.deleteMany({ where: { userId: uid, ticker: symbol } });

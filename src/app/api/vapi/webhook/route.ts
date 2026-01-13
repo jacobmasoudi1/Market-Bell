@@ -8,6 +8,8 @@ import {
   listWatchlist,
   removeWatchlistItem,
 } from "@/lib/watchlist";
+import { getOrCreateDefaultUser } from "@/lib/user";
+import { getOrCreateProfile } from "@/lib/profile";
 
 type ToolArgs = Record<string, any>;
 
@@ -20,10 +22,8 @@ function getWatchlistData() {
 }
 
 async function getTodayBrief(args: ToolArgs): Promise<ToolResponse<TodayBrief>> {
-  const userId = "demo-user";
-  const dbProfile: any = await prisma.userProfile.findFirst({
-    where: { userId },
-  });
+  const userId = await getOrCreateDefaultUser();
+  const dbProfile: any = await getOrCreateProfile(userId);
   const defaultProfile: Profile = {
     riskTolerance: "medium",
     horizon: "long",
@@ -139,7 +139,8 @@ export async function POST(req: NextRequest) {
     }
     case "add_to_watchlist": {
       try {
-        const item = await addWatchlistItem("demo-user", args.ticker, args.reason);
+        const userId = await getOrCreateDefaultUser();
+        const item = await addWatchlistItem(userId, args.ticker, args.reason);
         return wrap({ ok: true, data: { added: item.ticker } });
       } catch (err: any) {
         return wrap({ ok: false, error: err.message });
@@ -147,7 +148,8 @@ export async function POST(req: NextRequest) {
     }
     case "get_watchlist": {
       try {
-        const items = await listWatchlist("demo-user");
+        const userId = await getOrCreateDefaultUser();
+        const items = await listWatchlist(userId);
         return wrap({ ok: true, data: { items } });
       } catch (err: any) {
         return wrap({ ok: false, error: err.message });
@@ -155,7 +157,8 @@ export async function POST(req: NextRequest) {
     }
     case "remove_from_watchlist": {
       try {
-        const removed = await removeWatchlistItem("demo-user", args.ticker);
+        const userId = await getOrCreateDefaultUser();
+        const removed = await removeWatchlistItem(userId, args.ticker);
         return wrap({ ok: true, data: { removed } });
       } catch (err: any) {
         return wrap({ ok: false, error: err.message });

@@ -1,30 +1,12 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-
-const DEMO_USER_ID = "demo-user";
-
-async function ensureUser() {
-  await prisma.user.upsert({
-    where: { id: DEMO_USER_ID },
-    update: {},
-    create: { id: DEMO_USER_ID },
-  });
-  return DEMO_USER_ID;
-}
+import { getOrCreateDefaultUser } from "@/lib/user";
+import { getOrCreateProfile } from "@/lib/profile";
 
 export async function GET() {
   try {
-    const userId = await ensureUser();
-    const profile = await prisma.userProfile.findUnique({ where: { userId } });
-    const finalProfile =
-      profile ??
-      (await prisma.userProfile.create({
-        data: {
-          userId,
-          riskTolerance: "medium",
-          horizon: "long",
-        },
-      }));
+    const userId = await getOrCreateDefaultUser();
+    const finalProfile = await getOrCreateProfile(userId);
 
     const conversations = await prisma.conversation.findMany({
       where: { userId },
