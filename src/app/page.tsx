@@ -34,7 +34,7 @@ export default function Home() {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [authError, setAuthError] = useState(false);
   const { data: session, status: authStatus } = useSession();
-  const signedIn = authStatus === "authenticated" && Boolean(session?.user?.id);
+  const signedIn = Boolean(session?.user?.id);
   const profileComplete = Boolean(profile?.riskTolerance && profile?.horizon);
   const hasAssistantReply = transcript.some((t) => t.role === "assistant");
   const shouldShowProfileForm = showProfileForm || !profileComplete;
@@ -44,11 +44,15 @@ export default function Home() {
   const transcriptTitle =
     currentConversation?.title ||
     (conversationId ? `Conversation ${conversationId.slice(0, 6)}` : "New conversation");
-  const displayName = session?.user?.name || session?.user?.email || "there";
 
   useEffect(() => {
     const loadProfile = async () => {
-      if (!signedIn) return;
+      if (!signedIn) {
+        setProfile(null);
+        setShowProfileForm(false);
+        setAuthError(false);
+        return;
+      }
       try {
         const res = await fetchJson("/api/profile");
         setProfile(res?.profile || null);
@@ -57,7 +61,9 @@ export default function Home() {
         }
       } catch (err) {
         console.error("Profile load failed", err);
-        setAuthError(true);
+        if ((err as any)?.message?.includes("401") || (err as any)?.message?.includes("Unauthorized")) {
+          setAuthError(true);
+        }
         setShowProfileForm(true);
       }
     };
@@ -70,29 +76,15 @@ export default function Home() {
   };
 
   const handleToggleVoice = () => {
-    if (!signedIn) {
-      signIn("google");
-      return;
-    }
     setHistoryOpen(true);
     toggleVoice();
   };
 
-  if (authStatus === "loading") {
-    return (
-      <div className="min-h-screen bg-slate-950 text-white flex items-center justify-center px-6">
-        <div className="rounded-2xl bg-white/10 px-6 py-5 shadow-lg text-center text-sm text-slate-200">
-          Checking your session…
-        </div>
-      </div>
-    );
-  }
-
-  if (!signedIn) {
+  if (authStatus === "unauthenticated") {
     return (
       <div className="min-h-screen bg-slate-950 text-white flex items-center justify-center px-6">
         <div className="max-w-md w-full space-y-4 text-center">
-          <SessionHeader isSessionActive={false} status="Sign in required" onToggle={() => {}} />
+          <SessionHeader isSessionActive={false} status="" onToggle={() => {}} />
           <div className="rounded-2xl bg-white/10 p-6 shadow-lg space-y-3">
             <h2 className="text-xl font-semibold">Sign in to continue</h2>
             <p className="text-sm text-slate-300">
@@ -127,7 +119,6 @@ export default function Home() {
           <span className="ml-auto flex items-center gap-2">
             {signedIn ? (
               <>
-                <span className="text-slate-200">Welcome, {displayName}</span>
                 <span className="text-slate-400">{session?.user?.email}</span>
                 <button
                   onClick={() => signOut()}
