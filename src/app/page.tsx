@@ -4,7 +4,10 @@ import { HistoryList } from "./components/HistoryList";
 import { SessionHeader } from "./components/SessionHeader";
 import { TranscriptList } from "./components/TranscriptList";
 import { useVoiceSession } from "@/hooks/useVoiceSession";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { ProfileForm, Profile } from "./components/ProfileForm";
+import { ProfileSummary } from "./components/ProfileSummary";
+import { fetchJson } from "@/lib/fetchJson";
 
 export default function Home() {
   const {
@@ -22,6 +25,28 @@ export default function Home() {
 
   const [quoteTicker, setQuoteTicker] = useState("AAPL");
   const [newsTicker, setNewsTicker] = useState("");
+  const [profile, setProfile] = useState<Profile | null>(null);
+  const [showProfileForm, setShowProfileForm] = useState(false);
+
+  useEffect(() => {
+    const loadProfile = async () => {
+      try {
+        const res = await fetchJson("/api/profile");
+        setProfile(res?.profile || null);
+        if (!res?.profile?.riskTolerance || !res?.profile?.horizon) {
+          setShowProfileForm(true);
+        }
+      } catch {
+        setShowProfileForm(true);
+      }
+    };
+    loadProfile();
+  }, []);
+
+  const handleProfileSaved = (p: Profile) => {
+    setProfile(p);
+    setShowProfileForm(false);
+  };
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900">
@@ -31,6 +56,12 @@ export default function Home() {
           status={status}
           onToggle={toggleVoice}
         />
+
+        {showProfileForm || !profile?.riskTolerance || !profile?.horizon ? (
+          <ProfileForm initialProfile={profile} onSaved={handleProfileSaved} />
+        ) : (
+          <ProfileSummary profile={profile} onEdit={() => setShowProfileForm(true)} />
+        )}
 
         <section className="rounded-xl bg-white p-6 shadow-sm">
           <div className="flex flex-col gap-4">

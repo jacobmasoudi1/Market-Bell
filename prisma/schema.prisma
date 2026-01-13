@@ -25,6 +25,18 @@ enum Horizon {
   long
 }
 
+enum BriefStyle {
+  bullet
+  narrative
+  numbers_first
+}
+
+enum Experience {
+  beginner
+  intermediate
+  advanced
+}
+
 model User {
   id            String         @id @default(cuid())
   conversations Conversation[]
@@ -79,6 +91,8 @@ model UserProfile {
 
   riskTolerance Risk     @default(medium)
   horizon       Horizon  @default(long)
+  briefStyle    BriefStyle  @default(bullet)
+  experience    Experience @default(intermediate)
 
   sectors       String?
   constraints   String?

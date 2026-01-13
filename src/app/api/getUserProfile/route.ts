@@ -16,6 +16,16 @@ export async function GET() {
   try {
     const userId = await ensureUser();
     const profile = await prisma.userProfile.findUnique({ where: { userId } });
+    const finalProfile =
+      profile ??
+      (await prisma.userProfile.create({
+        data: {
+          userId,
+          riskTolerance: "medium",
+          horizon: "long",
+        },
+      }));
+
     const conversations = await prisma.conversation.findMany({
       where: { userId },
       orderBy: [{ lastMessageAt: "desc" }, { createdAt: "desc" }],
@@ -23,7 +33,7 @@ export async function GET() {
     });
     return NextResponse.json({
       ok: true,
-      profile,
+      profile: finalProfile,
       conversationHistory: conversations,
     });
   } catch (err: any) {

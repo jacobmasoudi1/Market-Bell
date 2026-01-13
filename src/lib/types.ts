@@ -14,6 +14,8 @@ export type Profile = {
   horizon: "day" | "swing" | "long";
   sectors?: string;
   constraints?: string;
+  briefStyle?: "bullet" | "narrative" | "numbers_first";
+  experience?: "beginner" | "intermediate" | "advanced";
 };
 
 export type Headline = {

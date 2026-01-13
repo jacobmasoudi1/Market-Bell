@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getQuote, getMovers, getNews, isValidTicker } from "@/lib/finnhub";
 import { addToWatchlist, getWatchlist, removeFromWatchlist } from "@/lib/watchlistStore";
-import { getProfile, saveProfile } from "@/lib/profileStore";
 import { ToolResponse, TodayBrief, WatchItem, Profile, Mover } from "@/lib/types";
 import { getNews as getNewsHelper } from "@/lib/finnhub";
+import { prisma } from "@/lib/prisma";
 
 type ToolArgs = Record<string, any>;
 
@@ -11,15 +11,28 @@ function wrap<T>(resp: ToolResponse<T>) {
   return NextResponse.json(resp);
 }
 
-function getProfileData() {
-  return getProfile().data as Profile;
-}
-
 function getWatchlistData() {
   return (getWatchlist().data?.items ?? []) as WatchItem[];
 }
 
 async function getTodayBrief(args: ToolArgs): Promise<ToolResponse<TodayBrief>> {
+  const userId = "demo-user";
+  const dbProfile: any = await prisma.userProfile.findFirst({
+    where: { userId },
+  });
+  const defaultProfile: Profile = {
+    riskTolerance: "medium",
+    horizon: "long",
+    briefStyle: "bullet",
+    experience: "intermediate",
+  };
+  const profile: Profile = {
+    riskTolerance: dbProfile?.riskTolerance ?? "medium",
+    horizon: dbProfile?.horizon ?? "long",
+    briefStyle: (dbProfile?.briefStyle as Profile["briefStyle"]) ?? "bullet",
+    experience: (dbProfile?.experience as Profile["experience"]) ?? "intermediate",
+  };
+
   const limit = Math.min(Math.max(Number(args.limit ?? 3), 1), 10);
   const gainers = await getMovers({ direction: "gainers", limit: 5 });
   const losers = await getMovers({ direction: "losers", limit: 5 });
@@ -34,23 +47,72 @@ async function getTodayBrief(args: ToolArgs): Promise<ToolResponse<TodayBrief>> 
         topGainers: gainers.data?.movers ?? [],
         topLosers: losers.data?.movers ?? [],
         headlines: news.data?.headlines ?? [],
-        profile: getProfileData(),
+        profile: profile ?? defaultProfile,
         watchlist: getWatchlistData(),
       },
     };
   }
 
+  const summary = formatBrief(profile, gainers.data?.movers ?? [], losers.data?.movers ?? [], news.data?.headlines ?? []);
+
   return {
     ok: true,
     data: {
-      summary: "Brief: markets mixed; watching tech and rates; headlines below.",
+      summary,
       topGainers: gainers.data?.movers.slice(0, 5) ?? [],
       topLosers: losers.data?.movers.slice(0, 5) ?? [],
       headlines: news.data?.headlines ?? [],
-      profile: getProfileData(),
+      profile,
       watchlist: getWatchlistData(),
     },
   };
+}
+
+function formatBrief(profile: Profile, gainers: Mover[], losers: Mover[], headlines: { title: string }[]) {
+  const experience = (profile.experience as string) ?? "intermediate";
+  const briefStyle = (profile.briefStyle as string) ?? "bullet";
+
+  const explain = experience === "beginner";
+  const concise = experience === "advanced";
+
+  const gainText = gainers.slice(0, 3).map((g) => `${g.ticker} ${g.changePercent.toFixed(2)}%`);
+  const loseText = losers.slice(0, 3).map((l) => `${l.ticker} ${l.changePercent.toFixed(2)}%`);
+  const newsText = headlines.slice(0, 2).map((h) => h.title);
+
+  const helper = (arr: string[], label: string) =>
+    arr.length ? `${label}: ${arr.join(", ")}` : `${label}: none`;
+
+  if (briefStyle === "numbers_first") {
+    const parts = [
+      helper(gainText, "Top gainers"),
+      helper(loseText, "Top losers"),
+      newsText.length ? `News: ${newsText.join(" | ")}` : "News: none",
+    ];
+    if (explain) parts.push("Note: % change vs prior close; headlines are recent market items.");
+    return parts.join("; ");
+  }
+
+  if (briefStyle === "narrative") {
+    const lines = [];
+    if (gainText.length || loseText.length) {
+      lines.push(
+        `Markets mixed: gainers (${gainText.join(", ") || "none"}), losers (${loseText.join(", ") || "none"}).`,
+      );
+    }
+    if (newsText.length) lines.push(`Headlines: ${newsText.join(" | ")}`);
+    if (explain) lines.push("Note: % change is vs prior close; headlines summarize recent moves.");
+    if (concise) return lines.join(" ");
+    return lines.join(" ");
+  }
+
+  // default bullet
+  const bullets = [
+    helper(gainText, "Top gainers"),
+    helper(loseText, "Top losers"),
+    newsText.length ? `News: ${newsText.join(" | ")}` : "News: none",
+  ];
+  if (explain) bullets.push("Note: % change is vs prior close; headlines summarize recent moves.");
+  return bullets.join(" • ");
 }
 
 export async function POST(req: NextRequest) {
@@ -81,17 +143,35 @@ export async function POST(req: NextRequest) {
       return wrap(removeFromWatchlist(args.ticker));
     }
     case "save_user_profile": {
-      return wrap(
-        saveProfile({
-          riskTolerance: args.riskTolerance,
-          horizon: args.horizon,
-          sectors: args.sectors,
-          constraints: args.constraints,
-        }),
-      );
+      return wrap({ ok: false, error: "Not implemented in webhook" });
     }
     case "get_user_profile": {
-      return wrap(getProfile());
+      const userId = "demo-user";
+      const dbProfile: any = await prisma.userProfile.findFirst({
+        where: { userId },
+      });
+      if (!dbProfile) {
+        return wrap({
+          ok: true,
+          data: {
+            riskTolerance: "medium",
+            horizon: "long",
+            briefStyle: "bullet",
+            experience: "intermediate",
+          },
+        });
+      }
+      return wrap({
+        ok: true,
+        data: {
+          riskTolerance: dbProfile.riskTolerance,
+          horizon: dbProfile.horizon,
+          briefStyle: dbProfile.briefStyle as Profile["briefStyle"],
+          experience: dbProfile.experience as Profile["experience"],
+          sectors: dbProfile.sectors ?? undefined,
+          constraints: dbProfile.constraints ?? undefined,
+        },
+      });
     }
     case "get_news": {
       return wrap(
