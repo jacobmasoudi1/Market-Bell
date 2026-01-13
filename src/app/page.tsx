@@ -8,6 +8,7 @@ import { useEffect, useState } from "react";
 import { ProfileForm, Profile } from "./components/ProfileForm";
 import { ProfileSummary } from "./components/ProfileSummary";
 import { fetchJson } from "@/lib/fetchJson";
+import { Watchlist } from "./components/Watchlist";
 
 export default function Home() {
   const {
@@ -62,6 +63,8 @@ export default function Home() {
         ) : (
           <ProfileSummary profile={profile} onEdit={() => setShowProfileForm(true)} />
         )}
+
+        <Watchlist />
 
         <section className="rounded-xl bg-white p-6 shadow-sm">
           <div className="flex flex-col gap-4">
