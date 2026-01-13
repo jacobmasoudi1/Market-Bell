@@ -25,6 +25,21 @@ async function getTodayBrief(args: ToolArgs): Promise<ToolResponse<TodayBrief>> 
   const losers = await getMovers({ direction: "losers", limit: 5 });
   const news = await getNewsHelper({ limit });
 
+  if (!gainers.ok || !losers.ok || !news.ok) {
+    return {
+      ok: false,
+      error: "Unable to build brief from live data",
+      data: {
+        summary: "",
+        topGainers: gainers.data?.movers ?? [],
+        topLosers: losers.data?.movers ?? [],
+        headlines: news.data?.headlines ?? [],
+        profile: getProfileData(),
+        watchlist: getWatchlistData(),
+      },
+    };
+  }
+
   return {
     ok: true,
     data: {

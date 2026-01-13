@@ -1,0 +1,102 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  user
+  assistant
+  tool
+}
+
+enum Risk {
+  low
+  medium
+  high
+}
+
+enum Horizon {
+  day
+  swing
+  long
+}
+
+model User {
+  id            String         @id @default(cuid())
+  conversations Conversation[]
+  profile       UserProfile?
+  watchlist     WatchlistItem[]
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+}
+
+model Conversation {
+  id            String    @id @default(cuid())
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId        String
+
+  title         String?
+  summary       String?
+  lastMessageAt DateTime?
+
+  messages      Message[]
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([userId, createdAt])
+  @@index([userId, lastMessageAt])
+}
+
+model Message {
+  id             String       @id @default(cuid())
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  conversationId String
+
+  role           Role
+  text           String
+
+  toolName       String?
+  toolCallId     String?
+  toolArgsJson   Json?
+  toolResultJson Json?
+
+  createdAt      DateTime     @default(now())
+
+  @@index([conversationId, createdAt])
+  @@index([conversationId, role, createdAt])
+  @@index([toolCallId])
+}
+
+model UserProfile {
+  id            String   @id @default(cuid())
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId        String   @unique
+
+  riskTolerance Risk     @default(medium)
+  horizon       Horizon  @default(long)
+
+  sectors       String?
+  constraints   String?
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model WatchlistItem {
+  id        String  @id @default(cuid())
+  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+
+  ticker    String
+  reason    String?
+
+  createdAt DateTime @default(now())
+
+  @@unique([userId, ticker])
+  @@index([userId, createdAt])
+}

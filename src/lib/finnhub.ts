@@ -7,7 +7,7 @@ export const isValidTicker = (value?: string) =>
   !!value && /^[A-Z.\-]{1,10}$/.test(value.trim().toUpperCase());
 
 async function finnhubFetch<T>(path: string, params: Record<string, any>): Promise<T> {
-  const token = process.env.FINNHUB_API_KEY;
+  const token = process.env.FINNHUB_API_KEY?.trim();
   if (!token) {
     throw new Error("Missing FINNHUB_API_KEY");
   }
@@ -25,12 +25,37 @@ async function finnhubFetch<T>(path: string, params: Record<string, any>): Promi
   return res.json() as Promise<T>;
 }
 
-export async function getQuote(symbol: string): Promise<ToolResponse<QuoteData>> {
+type ProfileCacheEntry = { name?: string; logo?: string; expiresAt: number };
+const profileCache = new Map<string, ProfileCacheEntry>();
+const PROFILE_TTL_MS = 5 * 60 * 1000;
+
+async function getProfile(symbol: string): Promise<{ name?: string; logo?: string }> {
+  const ticker = symbol.toUpperCase();
+  const cached = profileCache.get(ticker);
+  const now = Date.now();
+  if (cached && cached.expiresAt > now) {
+    return { name: cached.name, logo: cached.logo };
+  }
+  try {
+    const data = await finnhubFetch<{ name?: string; logo?: string }>("/stock/profile2", { symbol: ticker });
+    profileCache.set(ticker, {
+      name: data?.name,
+      logo: data?.logo,
+      expiresAt: now + PROFILE_TTL_MS,
+    });
+    return { name: data?.name, logo: data?.logo };
+  } catch {
+    return {};
+  }
+}
+
+export async function getQuote(symbol: string): Promise<ToolResponse<QuoteData & { name?: string; logo?: string }>> {
   const ticker = symbol.toUpperCase();
   if (!isValidTicker(ticker)) {
     return { ok: false, error: "Invalid ticker" };
   }
   try {
+    const profile = await getProfile(ticker);
     const data = await finnhubFetch<{ c: number; d: number; dp: number }>("/quote", { symbol: ticker });
     if (!data || data.c <= 0) {
       return { ok: false, error: "Quote not found" };
@@ -39,23 +64,17 @@ export async function getQuote(symbol: string): Promise<ToolResponse<QuoteData>>
       ok: true,
       data: {
         ticker,
+        name: profile.name,
+        logo: profile.logo,
         price: data.c,
         change: data.d,
         changePercent: data.dp,
       },
     };
   } catch (err) {
-    const price = 120 + Math.random() * 10;
-    const change = (Math.random() - 0.5) * 4;
     return {
       ok: false,
       error: (err as Error)?.message || "Quote fetch failed",
-      fallback: {
-        ticker,
-        price: Number(price.toFixed(2)),
-        change: Number(change.toFixed(2)),
-        changePercent: Number(((change / price) * 100).toFixed(2)),
-      },
     };
   }
 }
@@ -72,8 +91,14 @@ export async function getMovers(params: {
       symbols.map(async (symbol) => {
         try {
           const q = await finnhubFetch<{ c: number; pc: number; dp?: number }>("/quote", { symbol });
-          const changePercent =
-            q.dp !== undefined ? q.dp : ((q.c - q.pc) / (q.pc || q.c || 1)) * 100;
+          const hasDp = Number.isFinite(q.dp);
+          const hasClose = q.c > 0 && q.pc > 0;
+          const changePercent = hasDp
+            ? q.dp
+            : hasClose
+              ? ((q.c - q.pc) / q.pc) * 100
+              : NaN;
+          if (!Number.isFinite(changePercent)) return null;
           return { ticker: symbol, price: q.c, changePercent };
         } catch {
           return null;
@@ -88,20 +113,10 @@ export async function getMovers(params: {
         : valid.sort((a, b) => a.changePercent - b.changePercent);
     return { ok: true, data: { direction, movers: sorted.slice(0, limit) } };
   } catch (err) {
-    const base = direction === "gainers" ? 2 : -2;
-    const movers = symbols.slice(0, limit).map((t) => {
-      const changePercent = base + (Math.random() - 0.5) * 1.5;
-      const price = 100 + Math.random() * 300;
-      return {
-        ticker: t,
-        price: Number(price.toFixed(2)),
-        changePercent: Number(changePercent.toFixed(2)),
-      };
-    });
     return {
       ok: false,
       error: (err as Error)?.message,
-      data: { direction, movers },
+      data: { direction, movers: [] },
     };
   }
 }
@@ -110,14 +125,16 @@ export async function getNews(params: {
   ticker?: string;
   limit?: number;
 }): Promise<ToolResponse<{ ticker: string; headlines: Headline[] }>> {
-  const ticker = params.ticker;
+  const tickerRaw = params.ticker;
+  const ticker = tickerRaw ? tickerRaw.toUpperCase() : undefined;
   const limit = Math.min(Math.max(Number(params.limit ?? 3), 1), 10);
   const now = new Date();
   const from = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
   const formatDate = (d: Date) => d.toISOString().slice(0, 10);
+  const allowTicker = !ticker || isValidTicker(ticker);
 
   try {
-    const news = ticker
+    const news = allowTicker && ticker
       ? await finnhubFetch<any[]>("/company-news", {
           symbol: ticker,
           from: formatDate(from),
@@ -127,22 +144,33 @@ export async function getNews(params: {
 
     const headlines = (news || [])
       .slice(0, limit)
-      .map((n) => ({
-        title: n.headline,
-        url: n.url,
-        time: n.datetime ? new Date(n.datetime * 1000).toISOString() : undefined,
-      }));
+      .map((n) => {
+        const url = safeUrl(n.url);
+        return {
+          title: n.headline,
+          url: url ?? "",
+          time: n.datetime ? new Date(n.datetime * 1000).toISOString() : undefined,
+        };
+      });
     return { ok: true, data: { ticker: ticker ?? "MARKET", headlines } };
   } catch (err) {
-    const headlines = Array.from({ length: limit }).map((_, i) => ({
-      title: `Demo headline ${i + 1} for ${ticker ?? "MARKET"}`,
-      url: "#",
-      time: new Date(Date.now() - i * 60_000).toISOString(),
-    }));
     return {
       ok: false,
       error: (err as Error)?.message,
-      data: { ticker: ticker ?? "MARKET", headlines },
+      data: { ticker: ticker ?? "MARKET", headlines: [] },
     };
+  }
+}
+
+function safeUrl(url?: string): string | undefined {
+  if (!url) return undefined;
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol === "http:" || parsed.protocol === "https:") {
+      return url;
+    }
+    return undefined;
+  } catch {
+    return undefined;
   }
 }
