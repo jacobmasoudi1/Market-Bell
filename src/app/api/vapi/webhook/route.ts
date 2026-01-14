@@ -10,27 +10,11 @@ export async function OPTIONS() {
   return corsOptionsResponse();
 }
 
-const WEBHOOK_SECRET = process.env.VAPI_WEBHOOK_SECRET;
-
 export async function GET() {
   return NextResponse.json({ ok: true, message: "webhook alive" }, { status: 200, headers: getCorsHeaders() });
 }
 
 export async function POST(req: NextRequest) {
-  if (WEBHOOK_SECRET) {
-    const secretHeader = req.headers.get("x-webhook-secret");
-    if (!secretHeader || secretHeader !== WEBHOOK_SECRET) {
-      return NextResponse.json(
-        {
-          results: [
-            { toolCallId: "unknown", result: "Invalid webhook secret" },
-          ],
-        },
-        { status: 401, headers: getCorsHeaders() }
-      );
-    }
-  }
-
   const contentType = req.headers.get("content-type") || "";
   if (!contentType.includes("application/json")) {
     return NextResponse.json(
