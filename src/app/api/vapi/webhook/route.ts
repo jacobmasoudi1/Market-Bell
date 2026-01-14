@@ -76,7 +76,7 @@ export async function POST(req: NextRequest) {
     return wrapVapiResponse(ctx.toolCallId, confirmationResult);
   }
 
-  const handler = TOOL_REGISTRY[ctx.resolvedName as ToolName];
+  const handler = TOOL_REGISTRY[ctx.resolvedName as keyof typeof TOOL_REGISTRY];
 
   if (!handler) {
     console.error("Webhook unknown tool", ctx.resolvedName, body);

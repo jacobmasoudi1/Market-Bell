@@ -7,9 +7,9 @@ import { ToolArgs, ToolName } from "@/lib/vapi/toolTypes";
 import { ToolResponse, TodayBrief, Profile } from "@/lib/types";
 import { addWatchlistItem, listWatchlist, removeWatchlistItem, clearWatchlist } from "@/lib/watchlist";
 
-export type ToolContext = { userId: string; source: string; toolCallId: string; conversationId?: string };
-
-export type ToolHandler = (args: ToolArgs, ctx: ToolContext) => Promise<ToolResponse<any>>;
+type ToolContext = { userId: string; source: string; toolCallId: string; conversationId?: string };
+type ToolHandler = (args: ToolArgs, ctx: ToolContext) => Promise<ToolResponse<any>>;
+type CanonicalToolName = Exclude<ToolName, "get_top_movers">;
 
 const coerceTicker = (raw?: string | null) => {
   const mapped = mapCommonNameToTicker(raw);
@@ -43,7 +43,17 @@ async function getTodayBrief(args: ToolArgs, userId: string): Promise<ToolRespon
   };
 }
 
-export const TOOL_REGISTRY: Record<ToolName, ToolHandler> = {
+const moversHandler: ToolHandler = async (args) => {
+  if (args.limit && typeof args.limit !== "number") {
+    return { ok: false, error: "Limit must be a number." };
+  }
+  return getMovers({
+    direction: args.direction === "losers" ? "losers" : "gainers",
+    limit: args.limit,
+  });
+};
+
+export const TOOL_REGISTRY: Record<CanonicalToolName, ToolHandler> = {
   get_quote: async (args, ctx) => {
     const ticker = coerceTicker(args.ticker);
     const validation = validateTickerForTool(ticker, {
@@ -62,24 +72,7 @@ export const TOOL_REGISTRY: Record<ToolName, ToolHandler> = {
     }
     return getQuote(validation.ticker);
   },
-  get_top_movers: async (args) => {
-    if (args.limit && typeof args.limit !== "number") {
-      return { ok: false, error: "Limit must be a number." };
-    }
-    return getMovers({
-      direction: args.direction === "losers" ? "losers" : "gainers",
-      limit: args.limit,
-    });
-  },
-  get_movers: async (args) => {
-    if (args.limit && typeof args.limit !== "number") {
-      return { ok: false, error: "Limit must be a number." };
-    }
-    return getMovers({
-      direction: args.direction === "losers" ? "losers" : "gainers",
-      limit: args.limit,
-    });
-  },
+  get_movers: moversHandler,
   get_news: async (args, ctx) => {
     const ticker = coerceTicker(args.ticker);
     const validation = validateTickerForTool(ticker, {
@@ -210,4 +203,5 @@ export const TOOL_ALIASES: Partial<Record<ToolName, ToolName>> = {
   get_top_movers: "get_movers",
 };
 
+export type { ToolContext, ToolHandler, CanonicalToolName };
 export { coerceTicker };
