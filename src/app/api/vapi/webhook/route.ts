@@ -367,7 +367,6 @@ export async function POST(req: NextRequest) {
         const handler = TOOL_REGISTRY[toolName];
         if (handler) {
           try {
-            // Explicitly set confirm: true when executing pending confirmation
             const confirmedArgs = { ...pending.args, confirm: true, ticker: pending.ticker };
             const result = await handler(confirmedArgs, {
               userId,

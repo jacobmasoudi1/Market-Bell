@@ -5,6 +5,8 @@ import { fetchJson } from "@/lib/fetchJson";
 import { Role } from "@prisma/client";
 import { VoiceClientDeps, VapiClient } from "@/types/voiceClient";
 
+const toSafeString = (val: unknown): string | null => (typeof val === "string" ? val : null);
+
 export function useVoiceClient(deps: VoiceClientDeps) {
   const [isSessionActive, setIsSessionActive] = useState(false);
   const [status, setStatus] = useState("");
@@ -57,31 +59,29 @@ export function useVoiceClient(deps: VoiceClientDeps) {
       const client = new VapiCtor(publicKey);
       client.on?.("message", (payload: unknown = {}) => {
         const messagePayload = payload as {
-          message?: string;
-          text?: string;
-          content?: string;
-          transcript?: string;
-          output?: string;
+          message?: unknown;
+          text?: unknown;
+          content?: unknown;
+          transcript?: unknown;
+          output?: unknown;
           role?: string;
           type?: string;
         };
         const text =
-          messagePayload?.transcript ||
-          messagePayload?.output ||
-          messagePayload?.message ||
-          messagePayload?.text ||
-          messagePayload?.content;
+          toSafeString(messagePayload?.transcript) ||
+          toSafeString(messagePayload?.output) ||
+          toSafeString(messagePayload?.message) ||
+          toSafeString(messagePayload?.text) ||
+          toSafeString(messagePayload?.content);
         const role =
           messagePayload?.role === "user" || messagePayload?.type === "voice-input"
             ? Role.user
             : Role.assistant;
         const transcriptType = (messagePayload as { transcriptType?: string })?.transcriptType;
         const isFinal = transcriptType === "final" || transcriptType === "final_transcript";
-        console.log("[Vapi] message", payload);
         if (text) {
           setLiveTranscript(text);
           setLiveTranscriptRole(role);
-          // Commit to transcript only when we have a final chunk.
           if (isFinal) {
             const normalized = text.trim();
             if (normalized && normalized !== lastCommittedRef.current.trim()) {
@@ -95,16 +95,14 @@ export function useVoiceClient(deps: VoiceClientDeps) {
           }
         }
       });
-      client.on?.("call-start", (info: unknown) => {
-        console.log("[Vapi] call-start", info);
+      client.on?.("call-start", () => {
         callStartMs.current = Date.now();
         setLastCallDurationSec(null);
         setStatus("Call started - speak now");
       });
       const handleTranscript = (payload: unknown, source: string) => {
-        console.log("[Vapi] transcript event", source, payload);
-        const t = payload as { transcript?: string; transcriptType?: string; role?: string; text?: string };
-        const textVal = t?.transcript || t?.text;
+        const t = payload as { transcript?: unknown; transcriptType?: string; role?: string; text?: unknown };
+        const textVal = toSafeString(t?.transcript) || toSafeString(t?.text);
         if (textVal) {
           setLiveTranscript(textVal);
           if (t?.role === "user") setLiveTranscriptRole(Role.user);
@@ -119,8 +117,7 @@ export function useVoiceClient(deps: VoiceClientDeps) {
       client.on?.("transcript", (p) => handleTranscript(p, "transcript"));
       client.on?.("transcript.partial", (p) => handleTranscript(p, "transcript.partial"));
       client.on?.("transcript.final", (p) => handleTranscript(p, "transcript.final"));
-      client.on?.("call-end", (info: unknown) => {
-        console.log("[Vapi] call-end", info);
+      client.on?.("call-end", () => {
         setIsSessionActive(false);
         setStatus("Session stopped.");
         if (callStartMs.current) {
@@ -131,7 +128,6 @@ export function useVoiceClient(deps: VoiceClientDeps) {
       });
       client.on?.("error", (err: unknown) => {
         const message = err instanceof Error ? err.message : String(err);
-        console.error("[Vapi] error", err);
         setStatus(message ? `Voice session error: ${message}` : "Voice session error. Tap to retry.");
       });
 
@@ -162,7 +158,6 @@ export function useVoiceClient(deps: VoiceClientDeps) {
       deps.addMessage(Role.assistant, "Voice session live. Ask for a market brief anytime.");
       setStatus("Voice session active.");
     } catch (error: unknown) {
-      console.error("[Vapi] start/connect error", error);
       const message = error instanceof Error ? error.message : null;
       setStatus(message ? `Voice session error: ${message}` : "Voice session error");
     }

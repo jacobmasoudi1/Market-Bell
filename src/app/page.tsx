@@ -51,7 +51,6 @@ export default function Home() {
   const [newsTicker, setNewsTicker] = useState("");
   const [profile, setProfile] = useState<Profile | null>(null);
   const [showProfileForm, setShowProfileForm] = useState(false);
-  const [historyOpen, setHistoryOpen] = useState(false);
   const [authError, setAuthError] = useState(false);
   const { data: session, status: authStatus } = useSession();
   const signedIn = Boolean(session?.user?.id);
@@ -96,7 +95,6 @@ export default function Home() {
   };
 
   const handleToggleVoice = () => {
-    setHistoryOpen(true);
     toggleVoice();
   };
 
@@ -128,14 +126,6 @@ export default function Home() {
         <SessionHeader isSessionActive={isSessionActive} status={status} onToggle={handleToggleVoice} />
 
         <div className="flex flex-wrap items-center gap-2 text-xs text-slate-300">
-          <span className="rounded bg-white/10 px-2 py-1">Conversation ID: {conversationId ?? "none"}</span>
-          <span className="rounded bg-white/10 px-2 py-1">Auto-saved while you talk</span>
-          <button
-            onClick={() => setHistoryOpen((v) => !v)}
-            className="rounded bg-white/10 px-2 py-1 text-xs hover:bg-white/20 transition"
-          >
-            {historyOpen ? "Hide history" : "Show history"}
-          </button>
           <span className="ml-auto flex items-center gap-2">
             {signedIn ? (
               <>
@@ -158,13 +148,19 @@ export default function Home() {
           </span>
         </div>
 
-        <div className="grid gap-6 lg:grid-cols-[260px_1fr_320px] items-start">
-          <aside
-            className={`space-y-4 transition-all duration-300 ${
-              historyOpen ? "opacity-100" : "opacity-0 pointer-events-none"
-            }`}
-          >
-            <HistoryList history={history} onSelect={selectConversation} onNew={startNewConversation} />
+        <div className="grid gap-6 lg:grid-cols-[280px_1fr_320px] items-start">
+          <aside className="space-y-4">
+            <HistoryList
+              history={history}
+              activeId={conversationId}
+              liveText={liveTranscript}
+              isLive={isSessionActive}
+              lastDurationSec={lastCallDurationSec}
+              onSelect={selectConversation}
+              onNew={() => {
+                startNewConversation();
+              }}
+            />
           </aside>
 
           <div className="space-y-4">

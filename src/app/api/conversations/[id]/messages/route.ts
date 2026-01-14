@@ -2,14 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { Role } from "@prisma/client";
 import { requireUserId } from "@/lib/auth-session";
+import { maybeUpdateConversationSummary } from "@/lib/summarizeConversation";
 import { corsResponse, corsOptionsResponse } from "@/lib/cors";
-
-const buildTitle = (text: string) => {
-  const sanitized = text.replace(/\s+/g, " ").trim();
-  if (!sanitized) return null;
-  const max = 80;
-  return sanitized.length > max ? sanitized.slice(0, max - 1) + "…" : sanitized;
-};
+import { isNoiseText, buildTitle } from "@/lib/conversationUtils";
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -39,7 +34,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     }
 
     const titleUpdate =
-      (!convo.title || !convo.title.trim()) && (role === Role.user || role === Role.assistant)
+      (!convo.title || !convo.title.trim()) &&
+      (role === Role.user || role === Role.assistant) &&
+      !isNoiseText(text)
         ? buildTitle(text)
         : null;
 
@@ -63,6 +60,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         },
       }),
     ]);
+
+    if (role === Role.assistant || role === Role.user) {
+      void maybeUpdateConversationSummary(convo.id);
+    }
 
     return corsResponse({ 
       ok: true, 

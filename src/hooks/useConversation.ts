@@ -36,6 +36,14 @@ export function useConversation() {
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [conversationId, setConversationId] = useState<string | null>(null);
 
+  const normalizeHistoryEntry = (entry: any): HistoryEntry => ({
+    id: typeof entry?.id === "string" ? entry.id : String(entry?.id ?? ""),
+    title: typeof entry?.title === "string" ? entry.title : undefined,
+    summary: typeof entry?.summary === "string" ? entry.summary : undefined,
+    createdAt: typeof entry?.createdAt === "string" ? entry.createdAt : undefined,
+    lastMessageAt: typeof entry?.lastMessageAt === "string" ? entry.lastMessageAt : undefined,
+  });
+
   useEffect(() => {
     const savedConversation = localStorage.getItem("conversationId");
     if (savedConversation) {
@@ -82,7 +90,8 @@ export function useConversation() {
   const loadHistory = async () => {
     try {
       const data = await fetchJson<HistoryResponse>("/api/conversations");
-      setHistory(data?.conversations || []);
+      const items = (data?.conversations || []).map(normalizeHistoryEntry);
+      setHistory(items);
     } catch (error: unknown) {
       console.error("Could not load history", error);
     }
