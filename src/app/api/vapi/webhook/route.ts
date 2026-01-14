@@ -236,6 +236,12 @@ export async function POST(req: NextRequest) {
 
   const body = await req.json().catch(() => ({}));
   console.log("[Webhook] received keys", Object.keys(body));
+  console.log("[Webhook] body structure", {
+    hasCall: !!body.call,
+    hasMetadata: !!body.metadata,
+    callMetadata: body.call?.metadata,
+    bodyMetadata: body.metadata,
+  });
 
   const conversationId =
     (body as { metadata?: { conversationId?: string } })?.metadata?.conversationId ||
@@ -244,9 +250,23 @@ export async function POST(req: NextRequest) {
     undefined;
 
   const extracted = extractToolCall(body);
-  const name = extracted.name;
+  let name = extracted.name;
   let args: ToolArgs = extracted.args ?? {};
   const toolCallId = extracted.toolCallId ?? "unknown";
+
+  if (!name || typeof name !== "string" || !name.trim()) {
+    if (args.limit !== undefined && (args.direction === "up" || args.direction === "down" || args.direction === "gainers" || args.direction === "losers")) {
+      name = "get_movers";
+      console.log("[Webhook] Inferred tool name from arguments", { inferredName: name, args });
+    } else if (args.ticker && typeof args.ticker === "string") {
+      if (args.reason !== undefined) {
+        name = "add_to_watchlist";
+      } else {
+        name = "get_quote";
+      }
+      console.log("[Webhook] Inferred tool name from arguments", { inferredName: name, args });
+    }
+  }
 
   const userText =
     (typeof args.ticker === "string" ? args.ticker : "") ||
@@ -275,6 +295,16 @@ export async function POST(req: NextRequest) {
   const fromBrowser = req.headers.get("x-from-browser") === "1";
   const allowDemo = isDev && req.headers.get("x-allow-demo") === "1";
 
+  if (!userToken && tokenSource === "none" && !fromBrowser) {
+    console.warn("[Webhook] Missing userToken in tool call arguments", {
+      name,
+      argsKeys: Object.keys(args),
+      bodyHasCallMetadata: !!body.call?.metadata,
+      callMetadataUserToken: !!body.call?.metadata?.userToken,
+      suggestion: "Ensure assistant system prompt includes: userToken: '{{userToken}}' in all tool call arguments",
+    });
+  }
+
   console.log("[Webhook] extracted tool call", {
     name,
     toolCallId,
@@ -291,13 +321,14 @@ export async function POST(req: NextRequest) {
     console.error("Received keys:", receivedKeys);
     console.error("Full received body:", JSON.stringify(body, null, 2));
     console.error("Extracted values:", { name, toolCallId, args });
+    console.error("Args structure:", { argsKeys: Object.keys(args), args });
     console.error("=================================");
     return NextResponse.json(
       {
         results: [
           {
             toolCallId,
-            result: `Error: Missing tool name. Received keys: ${receivedKeys.join(", ")}. Full body logged to server.`,
+            result: `Error: Missing tool name. The tool name field is empty. Please check your VAPI assistant tool configuration:\n1. Ensure the tool function name is set correctly in VAPI dashboard\n2. Ensure the tool schema name matches your registry (e.g., "get_movers" or "get_top_movers")\n3. If testing manually, ensure the "name" field is not empty.\n\nReceived arguments: ${JSON.stringify(args)}`,
           },
         ],
       },

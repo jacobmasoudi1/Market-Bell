@@ -72,5 +72,11 @@ export function normalizeArgs(raw: any, userText?: string) {
     }
   }
   
+  if (a.direction !== undefined) {
+    const d = String(a.direction || "").toLowerCase();
+    if (d === "up") a.direction = "gainers";
+    if (d === "down") a.direction = "losers";
+  }
+  
   return a;
 }

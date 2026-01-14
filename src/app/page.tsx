@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { signIn, signOut, useSession } from "next-auth/react";
 import { HistoryList } from "./components/HistoryList";
 import { SessionHeader } from "./components/SessionHeader";
-import { TranscriptList } from "./components/TranscriptList";
+import { CallTranscript } from "./components/CallTranscript";
 import { useAgentTools } from "@/hooks/useAgentTools";
 import { useConversation } from "@/hooks/useConversation";
 import { useVoiceClient } from "@/hooks/useVoiceClient";
@@ -25,7 +25,16 @@ export default function Home() {
     startNewConversation,
   } = useConversation();
 
-  const { isSessionActive, status, setStatus, userToken, toggleVoice } = useVoiceClient({
+  const {
+    isSessionActive,
+    status,
+    setStatus,
+    userToken,
+    toggleVoice,
+    liveTranscript,
+    liveTranscriptRole,
+    lastCallDurationSec,
+  } = useVoiceClient({
     addMessage,
     ensureConversation,
   });
@@ -159,7 +168,13 @@ export default function Home() {
           </aside>
 
           <div className="space-y-4">
-            <TranscriptList transcript={transcript} title={transcriptTitle} />
+            <CallTranscript
+              transcript={transcript}
+              liveText={liveTranscript}
+              liveRole={liveTranscriptRole}
+              title={transcriptTitle}
+              lastDurationSec={lastCallDurationSec}
+            />
 
             {profileComplete && !shouldShowProfileForm && hasAssistantReply && (
               <div className="rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-slate-700 shadow-sm">

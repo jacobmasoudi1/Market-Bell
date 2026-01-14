@@ -18,17 +18,21 @@ export async function POST() {
   }
 
   try {
+    const requestBody = { assistantId };
+    console.log("[CallToken] Creating VAPI call", { assistantId: assistantId?.substring(0, 8) + "..." });
+    
     const res = await fetch("https://api.vapi.ai/call", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${apiKey}`,
       },
-      body: JSON.stringify({ assistantId }),
+      body: JSON.stringify(requestBody),
     });
 
     if (!res.ok) {
       const errText = await res.text();
+      console.error("[CallToken] VAPI API error", { status: res.status, statusText: res.statusText, error: errText });
       return corsResponse(
         { error: `Vapi call failed: ${errText || res.statusText}` },
         res.status

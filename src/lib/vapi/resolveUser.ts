@@ -16,6 +16,7 @@ export function extractUserToken(body: any, args: any, req: NextRequest): TokenE
   const metadataSources = [
     body?.metadata,
     body?.meta,
+    body?.call?.metadata,
     body?.toolCall?.metadata,
     body?.tool?.metadata,
     body?.payload?.metadata,
