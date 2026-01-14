@@ -19,8 +19,7 @@ export async function POST() {
 
   try {
     const requestBody = { assistantId };
-    console.log("[CallToken] Creating VAPI call", { assistantId: assistantId?.substring(0, 8) + "..." });
-    
+
     const res = await fetch("https://api.vapi.ai/call", {
       method: "POST",
       headers: {

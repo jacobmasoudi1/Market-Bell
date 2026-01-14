@@ -8,6 +8,7 @@ import { CallTranscript } from "./components/CallTranscript";
 import { useAgentTools } from "@/hooks/useAgentTools";
 import { useConversation } from "@/hooks/useConversation";
 import { useVoiceClient } from "@/hooks/useVoiceClient";
+import { useWatchlistSync } from "@/hooks/useWatchlistSync";
 import { ProfileForm, Profile } from "./components/ProfileForm";
 import { ProfileSummary } from "./components/ProfileSummary";
 import { fetchJson } from "@/lib/fetchJson";
@@ -39,12 +40,17 @@ export default function Home() {
     ensureConversation,
   });
 
+  const { notify: notifyWatchlist } = useWatchlistSync();
+
   const { fetchQuote, fetchNews, fetchTodayBrief } = useAgentTools({
     userToken,
     setStatus,
     addMessage,
     ensureConversation,
     loadHistory,
+    refreshWatchlist: async () => {
+      notifyWatchlist();
+    },
   });
 
   const [quoteTicker, setQuoteTicker] = useState("AAPL");

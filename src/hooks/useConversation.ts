@@ -81,6 +81,9 @@ export function useConversation() {
           setConversationId(persistedId);
           localStorage.setItem("conversationId", persistedId);
         }
+        if (role === Role.assistant) {
+          await loadHistory();
+        }
       } catch (err: unknown) {
         console.error("Failed to persist message", err);
       }

@@ -12,6 +12,10 @@ export function formatResult<T>(resp: ToolResponse<T>): string {
 
   const data = resp.data as any;
 
+  if (typeof data.speech === "string" && data.speech.trim()) {
+    return data.speech.trim();
+  }
+
   if (data.ticker && typeof data.price === "number") {
     const change = data.change >= 0 ? `+${data.change}` : `${data.change}`;
     const changePercent =

@@ -19,24 +19,24 @@ export function ProfileSummary({ profile, onEdit }: Props) {
   ];
 
   return (
-    <section className="rounded-xl bg-white p-6 shadow-sm">
-      <div className="flex items-center justify-between">
+    <section className="rounded-2xl border border-white/10 bg-slate-950/70 text-white shadow-lg">
+      <div className="flex items-center justify-between px-4 pt-4">
         <div>
           <h2 className="text-lg font-semibold">Your Preferences</h2>
-          <p className="text-sm text-slate-500">Used to personalize briefs and watchlist ideas.</p>
+          <p className="text-sm text-slate-300/80">Used to personalize briefs and watchlist ideas.</p>
         </div>
         <button
           onClick={onEdit}
-          className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700 hover:border-slate-300"
+          className="rounded-lg border border-white/20 bg-white/5 px-3 py-2 text-sm text-white hover:border-white/40 hover:bg-white/10"
         >
           Edit preferences
         </button>
       </div>
-      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+      <div className="mt-4 grid gap-3 sm:grid-cols-2 px-4 pb-5">
         {rows.map((r) => (
-          <div key={r.label} className="rounded border border-slate-100 px-3 py-2">
-            <div className="text-xs uppercase text-slate-500">{r.label}</div>
-            <div className="text-sm text-slate-800">{r.value}</div>
+          <div key={r.label} className="rounded border border-white/10 bg-slate-900 px-3 py-3">
+            <div className="text-[11px] uppercase tracking-wide text-slate-300">{r.label}</div>
+            <div className="text-sm text-white">{r.value}</div>
           </div>
         ))}
       </div>

@@ -1,4 +1,27 @@
 const TICKER_REGEX = /^[A-Z]{1,5}(?:\.[A-Z]{1,2})?$/;
+const NAME_TICKER_MAP: Record<string, string> = {
+  amazon: "AMZN",
+  "amazon.com": "AMZN",
+  apple: "AAPL",
+  alphabet: "GOOGL",
+  google: "GOOGL",
+  microsoft: "MSFT",
+  meta: "META",
+  facebook: "META",
+  tesla: "TSLA",
+  nvidia: "NVDA",
+  netflix: "NFLX",
+  adobe: "ADBE",
+  "advanced micro devices": "AMD",
+  amd: "AMD",
+  intel: "INTC",
+};
+
+export const mapCommonNameToTicker = (value?: string | null): string | undefined => {
+  if (!value) return undefined;
+  const key = value.trim().toLowerCase();
+  return NAME_TICKER_MAP[key];
+};
 
 export type TickerValidationResult =
   | { status: "ok"; ticker: string }
@@ -22,13 +45,14 @@ type ValidateOptions = {
   confirm?: boolean;
   allowEmpty?: boolean;
   action?: string;
+  requireConfirm?: boolean;
 };
 
 export const validateTickerForTool = (
   rawTicker?: string | null,
   options: ValidateOptions = {},
 ): TickerValidationResult => {
-  const { confirm = false, allowEmpty = false, action } = options;
+  const { confirm = false, allowEmpty = false, action, requireConfirm = true } = options;
 
   if (!rawTicker || rawTicker.trim() === "") {
     if (allowEmpty) {
@@ -57,7 +81,7 @@ export const validateTickerForTool = (
     };
   }
 
-  if (!confirm) {
+  if (requireConfirm && !confirm) {
     const spelled = spellTicker(ticker);
     const actionText = action ? `${action} ${ticker}` : `ticker ${ticker}`;
     return {

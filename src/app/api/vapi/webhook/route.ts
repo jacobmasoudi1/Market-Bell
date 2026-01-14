@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { buildBriefData, formatBrief } from "@/lib/brief";
 import { getQuote, getMovers, getNews } from "@/lib/finnhub";
-import { validateTickerForTool } from "@/lib/ticker";
+import { validateTickerForTool, mapCommonNameToTicker, normalizeTicker } from "@/lib/ticker";
 import {
   storePendingConfirmation,
   getPendingConfirmation,
@@ -25,6 +25,12 @@ export async function OPTIONS() {
 
 const isDev = process.env.NODE_ENV !== "production";
 const WEBHOOK_SECRET = process.env.VAPI_WEBHOOK_SECRET;
+
+const coerceTicker = (raw?: string | null) => {
+  const mapped = mapCommonNameToTicker(raw);
+  if (mapped) return mapped;
+  return normalizeTicker(raw) || raw;
+};
 
 async function getTodayBrief(args: ToolArgs, userId: string): Promise<ToolResponse<TodayBrief>> {
   const limit = Math.min(Math.max(Number(args.limit ?? 3), 1), 10);
@@ -56,8 +62,10 @@ type ToolHandler = (args: ToolArgs, ctx: ToolContext) => Promise<ToolResponse<an
 
 const TOOL_REGISTRY: Record<ToolName, ToolHandler> = {
   get_quote: async (args, ctx) => {
-    const validation = validateTickerForTool(args.ticker, {
+    const ticker = coerceTicker(args.ticker);
+    const validation = validateTickerForTool(ticker, {
       confirm: args.confirm === true,
+      requireConfirm: false,
       action: "get a quote for",
     });
     if (validation.status === "invalid") {
@@ -90,9 +98,11 @@ const TOOL_REGISTRY: Record<ToolName, ToolHandler> = {
     });
   },
   get_news: async (args, ctx) => {
-    const validation = validateTickerForTool(args.ticker, {
+    const ticker = coerceTicker(args.ticker);
+    const validation = validateTickerForTool(ticker, {
       allowEmpty: true,
       confirm: args.confirm === true,
+      requireConfirm: false,
       action: "get news for",
     });
     if (validation.status === "invalid") {
@@ -117,8 +127,15 @@ const TOOL_REGISTRY: Record<ToolName, ToolHandler> = {
     return { ok: true, data: { items } };
   },
   add_to_watchlist: async (args, ctx) => {
-    const validation = validateTickerForTool(args.ticker, {
-      confirm: args.confirm === true,
+    const rawTicker = coerceTicker(args.ticker);
+
+    if (!ctx.userId) {
+      return { ok: false, error: "I couldn't verify your session. Please sign in and try again." };
+    }
+
+    const validation = validateTickerForTool(rawTicker, {
+      confirm: true,
+      requireConfirm: false,
       action: "add",
     });
     if (validation.status === "invalid") {
@@ -131,11 +148,20 @@ const TOOL_REGISTRY: Record<ToolName, ToolHandler> = {
       return { ok: false, error: validation.error };
     }
 
-    const item = await addWatchlistItem(ctx.userId, validation.ticker, args.reason);
-    return { ok: true, data: { added: item.ticker } };
+    try {
+      const item = await addWatchlistItem(ctx.userId, validation.ticker, args.reason);
+      const ok = Boolean(item?.ticker);
+      if (!ok) {
+        return { ok: false, error: "Unable to add to watchlist right now." };
+      }
+      return { ok: true, data: { added: validation.ticker, speech: `Added ${validation.ticker} to your watchlist.` } };
+    } catch (err: any) {
+      console.error("[Webhook][add_to_watchlist] watchlist write failed", err);
+      return { ok: false, error: "Unable to add to watchlist right now." };
+    }
   },
   remove_from_watchlist: async (args, ctx) => {
-    const rawTicker = args.ticker;
+    const rawTicker = coerceTicker(args.ticker);
     const wantsAll =
       args?.all === true ||
       args?.clear === true ||
@@ -149,6 +175,7 @@ const TOOL_REGISTRY: Record<ToolName, ToolHandler> = {
 
     const validation = validateTickerForTool(rawTicker, {
       confirm: args.confirm === true,
+      requireConfirm: true,
       action: "remove",
     });
     if (validation.status === "invalid") {
@@ -235,14 +262,6 @@ export async function POST(req: NextRequest) {
   }
 
   const body = await req.json().catch(() => ({}));
-  console.log("[Webhook] received keys", Object.keys(body));
-  console.log("[Webhook] body structure", {
-    hasCall: !!body.call,
-    hasMetadata: !!body.metadata,
-    callMetadata: body.call?.metadata,
-    bodyMetadata: body.metadata,
-  });
-
   const conversationId =
     (body as { metadata?: { conversationId?: string } })?.metadata?.conversationId ||
     (body as { call?: { metadata?: { conversationId?: string } } })?.call?.metadata?.conversationId ||
@@ -257,14 +276,12 @@ export async function POST(req: NextRequest) {
   if (!name || typeof name !== "string" || !name.trim()) {
     if (args.limit !== undefined && (args.direction === "up" || args.direction === "down" || args.direction === "gainers" || args.direction === "losers")) {
       name = "get_movers";
-      console.log("[Webhook] Inferred tool name from arguments", { inferredName: name, args });
     } else if (args.ticker && typeof args.ticker === "string") {
       if (args.reason !== undefined) {
         name = "add_to_watchlist";
       } else {
         name = "get_quote";
       }
-      console.log("[Webhook] Inferred tool name from arguments", { inferredName: name, args });
     }
   }
 
@@ -294,26 +311,6 @@ export async function POST(req: NextRequest) {
   const userHint = isDev ? extractUserHint(body, args, req) : undefined;
   const fromBrowser = req.headers.get("x-from-browser") === "1";
   const allowDemo = isDev && req.headers.get("x-allow-demo") === "1";
-
-  if (!userToken && tokenSource === "none" && !fromBrowser) {
-    console.warn("[Webhook] Missing userToken in tool call arguments", {
-      name,
-      argsKeys: Object.keys(args),
-      bodyHasCallMetadata: !!body.call?.metadata,
-      callMetadataUserToken: !!body.call?.metadata?.userToken,
-      suggestion: "Ensure assistant system prompt includes: userToken: '{{userToken}}' in all tool call arguments",
-    });
-  }
-
-  console.log("[Webhook] extracted tool call", {
-    name,
-    toolCallId,
-    conversationId,
-    argsKeys: Object.keys(args),
-    userHint,
-    hasUserToken: Boolean(userToken),
-    tokenSource,
-  });
 
   if (!name || typeof name !== "string" || !name.trim()) {
     const receivedKeys = Object.keys(body);
@@ -355,14 +352,11 @@ export async function POST(req: NextRequest) {
     });
     return wrapVapiResponse(toolCallId, { ok: false, error: errMsg });
   }
-  console.log("[Webhook] resolved user", { userId, source, tokenSource: resolvedTokenSource ?? tokenSource });
-
   if (conversationId && (args.confirm === true || isAffirmativeResponse(userText))) {
     const tickerTools: ToolName[] = ["get_quote", "get_news", "add_to_watchlist", "remove_from_watchlist"];
     for (const toolName of tickerTools) {
       const pending = getPendingConfirmation(conversationId, toolName);
       if (pending && pending.userId === userId) {
-        console.log("[Webhook] found pending confirmation, executing", { toolName, ticker: pending.ticker });
         clearPendingConfirmation(conversationId, toolName, pending.ticker);
         const handler = TOOL_REGISTRY[toolName];
         if (handler) {

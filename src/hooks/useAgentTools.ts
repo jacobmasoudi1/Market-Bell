@@ -22,6 +22,7 @@ type AgentToolDeps = {
   addMessage: AddMessage;
   ensureConversation: () => Promise<string>;
   loadHistory: () => Promise<void>;
+  refreshWatchlist?: () => Promise<void> | void;
 };
 
 type ToolArgs = Record<string, unknown>;
@@ -78,6 +79,12 @@ export function useAgentTools(deps: AgentToolDeps) {
       });
       deps.setStatus(`Got ${name} result`);
       await deps.loadHistory();
+
+      const isWatchlistTool = ["get_watchlist", "add_to_watchlist", "remove_from_watchlist"].includes(name);
+      if (isWatchlistTool) {
+        await deps.refreshWatchlist?.();
+      }
+
       return res;
     } catch (error: unknown) {
       deps.setStatus(`Tool error: ${formatErr(error)}`);

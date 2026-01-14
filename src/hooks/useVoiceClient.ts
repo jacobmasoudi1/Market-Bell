@@ -29,6 +29,7 @@ export function useVoiceClient(deps: VoiceClientDeps) {
     setStatus("Connecting to voice agent…");
     try {
       let token: string | undefined;
+      let userProfile: any = null;
       try {
         const tokenResp = await fetchJson<{ userToken?: string; ok?: boolean; error?: string }>(
           "/api/vapi/user-token",
@@ -44,6 +45,13 @@ export function useVoiceClient(deps: VoiceClientDeps) {
         setStatus("Signed-in context unavailable; using demo user.");
       }
       if (token) setUserToken(token);
+
+      try {
+        const profileResp = await fetchJson<{ profile?: any }>("/api/profile", { credentials: "include" });
+        userProfile = profileResp?.profile ?? null;
+      } catch {
+        userProfile = null;
+      }
 
       const vapiModule = (await import("@vapi-ai/web")) as {
         default?: new (key: string) => VapiClient;
@@ -135,9 +143,17 @@ export function useVoiceClient(deps: VoiceClientDeps) {
         process.env.NEXT_PUBLIC_VAPI_ASSISTANT_ID ||
         "16d8ea7a-bc10-40c4-bae1-9ac1a9567c74";
 
-      const assistantOverrides = token
-        ? { variableValues: { userToken: token } }
-        : undefined;
+      const variableValues: Record<string, any> = {
+        userToken: token ?? "",
+        riskTolerance: userProfile?.riskTolerance ?? "",
+        horizon: userProfile?.horizon ?? "",
+        briefStyle: userProfile?.briefStyle ?? "",
+        experience: userProfile?.experience ?? "",
+        sectors: userProfile?.sectors ?? "",
+        constraints: userProfile?.constraints ?? "",
+      };
+
+      const assistantOverrides = { variableValues };
 
       if (client.start) {
         if (assistantOverrides) {

@@ -74,7 +74,6 @@ export async function resolveUserId({
   }
   if (allowDemo) {
     const demoId = await getOrCreateDefaultUser();
-    console.log("[Webhook] NO TOKEN -> demo-user", demoId);
     return { userId: demoId, source: "demo-fallback", tokenSource: "demo" };
   }
   return { error: "Missing user token", tokenSource: "none" };

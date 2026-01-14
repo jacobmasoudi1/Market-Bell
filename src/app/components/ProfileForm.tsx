@@ -98,25 +98,23 @@ export function ProfileForm({ initialProfile, onSaved }: Props) {
   };
 
   return (
-    <section className="rounded-xl bg-white p-6 shadow-sm">
-      <div className="flex items-center justify-between">
+    <section className="rounded-2xl border border-white/10 bg-slate-950/70 text-white shadow-lg">
+      <div className="flex items-center justify-between px-4 pt-4">
         <div>
           <h2 className="text-lg font-semibold">Your Profile</h2>
-          <p className="text-sm text-slate-500">
-            Used to personalize your brief and ticker suggestions
-          </p>
+          <p className="text-sm text-slate-300/80">Personalize briefs and tool answers</p>
         </div>
-        <div className="text-sm text-slate-600 min-w-[80px] text-right">
+        <div className="text-sm text-slate-200 min-w-[80px] text-right">
           {status || (justSaved ? "Saved ✓" : "")}
         </div>
       </div>
-      <form onSubmit={handleSubmit} className="mt-4 grid gap-4 sm:grid-cols-2">
-        <label className="text-sm text-slate-700">
+      <form onSubmit={handleSubmit} className="mt-4 grid gap-4 sm:grid-cols-2 px-4 pb-5">
+        <label className="text-sm text-slate-200">
           Risk tolerance
           <select
             value={profile.riskTolerance || ""}
             onChange={(e) => setProfile((p) => ({ ...p, riskTolerance: e.target.value }))}
-            className="mt-1 w-full rounded border border-slate-200 px-3 py-2 text-sm"
+            className="mt-1 w-full rounded border border-white/10 bg-slate-900 px-3 py-2 text-sm text-white focus:border-emerald-400 focus:outline-none"
             required
           >
             {!profile.riskTolerance && (
@@ -132,12 +130,12 @@ export function ProfileForm({ initialProfile, onSaved }: Props) {
           </select>
         </label>
 
-        <label className="text-sm text-slate-700">
+        <label className="text-sm text-slate-200">
           Horizon
           <select
             value={profile.horizon || ""}
             onChange={(e) => setProfile((p) => ({ ...p, horizon: e.target.value }))}
-            className="mt-1 w-full rounded border border-slate-200 px-3 py-2 text-sm"
+            className="mt-1 w-full rounded border border-white/10 bg-slate-900 px-3 py-2 text-sm text-white focus:border-emerald-400 focus:outline-none"
             required
           >
             {!profile.horizon && (
@@ -153,32 +151,32 @@ export function ProfileForm({ initialProfile, onSaved }: Props) {
           </select>
         </label>
 
-        <label className="text-sm text-slate-700 sm:col-span-2">
+        <label className="text-sm text-slate-200 sm:col-span-2">
           Sectors (comma-separated)
           <input
             value={profile.sectors || ""}
             onChange={(e) => setProfile((p) => ({ ...p, sectors: e.target.value }))}
-            className="mt-1 w-full rounded border border-slate-200 px-3 py-2 text-sm"
+            className="mt-1 w-full rounded border border-white/10 bg-slate-900 px-3 py-2 text-sm text-white placeholder:text-slate-400 focus:border-emerald-400 focus:outline-none"
             placeholder="tech, healthcare"
           />
         </label>
 
-        <label className="text-sm text-slate-700 sm:col-span-2">
+        <label className="text-sm text-slate-200 sm:col-span-2">
           Constraints
           <textarea
             value={profile.constraints || ""}
             onChange={(e) => setProfile((p) => ({ ...p, constraints: e.target.value }))}
-            className="mt-1 w-full rounded border border-slate-200 px-3 py-2 text-sm"
+            className="mt-1 w-full rounded border border-white/10 bg-slate-900 px-3 py-2 text-sm text-white placeholder:text-slate-400 focus:border-emerald-400 focus:outline-none"
             placeholder="e.g., ESG, no crypto, etc."
           />
         </label>
 
-        <label className="text-sm text-slate-700">
+        <label className="text-sm text-slate-200">
           Brief style
           <select
             value={profile.briefStyle || "bullet"}
             onChange={(e) => setProfile((p) => ({ ...p, briefStyle: e.target.value }))}
-            className="mt-1 w-full rounded border border-slate-200 px-3 py-2 text-sm"
+            className="mt-1 w-full rounded border border-white/10 bg-slate-900 px-3 py-2 text-sm text-white focus:border-emerald-400 focus:outline-none"
           >
             {BRIEF.map((b) => (
               <option key={b.value} value={b.value}>
@@ -188,12 +186,12 @@ export function ProfileForm({ initialProfile, onSaved }: Props) {
           </select>
         </label>
 
-        <label className="text-sm text-slate-700">
+        <label className="text-sm text-slate-200">
           Experience level
           <select
             value={profile.experience || "intermediate"}
             onChange={(e) => setProfile((p) => ({ ...p, experience: e.target.value }))}
-            className="mt-1 w-full rounded border border-slate-200 px-3 py-2 text-sm"
+            className="mt-1 w-full rounded border border-white/10 bg-slate-900 px-3 py-2 text-sm text-white focus:border-emerald-400 focus:outline-none"
           >
             {EXPERIENCE.map((ex) => (
               <option key={ex.value} value={ex.value}>
@@ -203,18 +201,18 @@ export function ProfileForm({ initialProfile, onSaved }: Props) {
           </select>
         </label>
 
-        <div className="sm:col-span-2 flex justify-end gap-2">
+        <div className="sm:col-span-2 flex justify-end gap-2 pt-2">
           <button
             type="button"
             onClick={loadProfile}
-            className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700 hover:border-slate-300"
+            className="rounded-lg border border-white/20 bg-white/5 px-3 py-2 text-sm text-white hover:border-white/40 hover:bg-white/10"
           >
             Refresh
           </button>
           <button
             type="submit"
             disabled={loading}
-            className="rounded-lg bg-blue-600 px-4 py-2 text-white text-sm hover:bg-blue-700 disabled:opacity-60"
+            className="rounded-lg bg-emerald-500 px-4 py-2 text-white text-sm font-semibold hover:bg-emerald-600 disabled:opacity-60"
           >
             {loading ? "Saving..." : "Save"}
           </button>
