@@ -1,6 +1,7 @@
 import { clearPendingConfirmation, getPendingConfirmation, isAffirmativeResponse } from "@/lib/pendingConfirmations";
 import { TOOL_REGISTRY } from "@/lib/vapi/tools/registry";
-import { ToolArgs, ToolName } from "@/lib/vapi/toolTypes";
+import type { CanonicalToolName } from "@/lib/vapi/tools/registry";
+import { ToolArgs } from "@/lib/vapi/toolTypes";
 import { ToolResponse } from "@/lib/types";
 
 type ConfirmationContext = {
@@ -17,7 +18,7 @@ export async function maybeRunPendingConfirmation(ctx: ConfirmationContext): Pro
     return null;
   }
 
-  const tickerTools: ToolName[] = ["get_quote", "get_news", "add_to_watchlist", "remove_from_watchlist"];
+  const tickerTools: CanonicalToolName[] = ["get_quote", "get_news", "add_to_watchlist", "remove_from_watchlist"];
   for (const toolName of tickerTools) {
     const pending = getPendingConfirmation(ctx.conversationId, toolName);
     if (pending && pending.userId === ctx.userId) {
