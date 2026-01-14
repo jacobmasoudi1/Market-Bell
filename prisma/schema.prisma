@@ -7,6 +7,78 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+model User {
+  id                String          @id @default(cuid())
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  email             String?         @unique
+  image             String?
+  name              String?
+  providerAccountId String?         @unique
+  conversations     Conversation[]
+  profile           UserProfile?
+  watchlist         WatchlistItem[]
+}
+
+model Conversation {
+  id               String    @id @default(cuid())
+  userId           String
+  title            String?
+  summary          String?
+  lastMessageAt    DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  summaryUpdatedAt DateTime?
+  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages         Message[]
+
+  @@index([userId, createdAt])
+  @@index([userId, lastMessageAt])
+}
+
+model Message {
+  id             String       @id @default(cuid())
+  conversationId String
+  role           Role
+  text           String
+  toolName       String?
+  toolCallId     String?
+  toolArgsJson   Json?
+  toolResultJson Json?
+  createdAt      DateTime     @default(now())
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId, createdAt])
+  @@index([conversationId, role, createdAt])
+  @@index([toolCallId])
+}
+
+model UserProfile {
+  id            String     @id @default(cuid())
+  userId        String     @unique
+  riskTolerance Risk       @default(medium)
+  horizon       Horizon    @default(long)
+  sectors       String?
+  constraints   String?
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+  briefStyle    BriefStyle @default(bullet)
+  experience    Experience @default(intermediate)
+  user          User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model WatchlistItem {
+  id        String   @id @default(cuid())
+  userId    String
+  ticker    String
+  reason    String?
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, ticker])
+  @@index([userId, createdAt])
+}
+
 enum Role {
   user
   assistant
@@ -35,78 +107,4 @@ enum Experience {
   beginner
   intermediate
   advanced
-}
-
-model User {
-  id            String         @id @default(cuid())
-  email         String?        @unique
-  providerAccountId String?    @unique
-  name          String?
-  image         String?
-  conversations Conversation[]
-  profile       UserProfile?
-  watchlist     WatchlistItem[]
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
-}
-
-model Conversation {
-  id            String    @id @default(cuid())
-  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  userId        String
-  title         String?
-  summary       String?
-  summaryUpdatedAt DateTime?
-  lastMessageAt DateTime?
-  messages      Message[]
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-
-  @@index([userId, createdAt])
-  @@index([userId, lastMessageAt])
-}
-
-model Message {
-  id             String       @id @default(cuid())
-  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-  conversationId String
-  role           Role
-  text           String
-  toolName       String?
-  toolCallId     String?
-  toolArgsJson   Json?
-  toolResultJson Json?
-  createdAt      DateTime     @default(now())
-
-  @@index([conversationId, createdAt])
-  @@index([conversationId, role, createdAt])
-  @@index([toolCallId])
-}
-
-model UserProfile {
-  id            String   @id @default(cuid())
-  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  userId        String   @unique
-  riskTolerance Risk     @default(medium)
-  horizon       Horizon  @default(long)
-  briefStyle    BriefStyle  @default(bullet)
-  experience    Experience @default(intermediate)
-
-  sectors       String?
-  constraints   String?
-
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-}
-
-model WatchlistItem {
-  id        String  @id @default(cuid())
-  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
-  userId    String
-  ticker    String
-  reason    String?
-  createdAt DateTime @default(now())
-
-  @@unique([userId, ticker])
-  @@index([userId, createdAt])
 }

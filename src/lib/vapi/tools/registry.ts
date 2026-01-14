@@ -210,4 +210,5 @@ export const TOOL_ALIASES: Partial<Record<ToolName, ToolName>> = {
   get_top_movers: "get_movers",
 };
 
-export { coerceTicker, ToolContext };
+export { coerceTicker };
+export type { ToolContext };
