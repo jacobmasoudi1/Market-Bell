@@ -7,7 +7,7 @@ import { ToolArgs, ToolName } from "@/lib/vapi/toolTypes";
 import { ToolResponse, TodayBrief, Profile } from "@/lib/types";
 import { addWatchlistItem, listWatchlist, removeWatchlistItem, clearWatchlist } from "@/lib/watchlist";
 
-type ToolContext = { userId: string; source: string; toolCallId: string; conversationId?: string };
+export type ToolContext = { userId: string; source: string; toolCallId: string; conversationId?: string };
 
 export type ToolHandler = (args: ToolArgs, ctx: ToolContext) => Promise<ToolResponse<any>>;
 
@@ -211,4 +211,3 @@ export const TOOL_ALIASES: Partial<Record<ToolName, ToolName>> = {
 };
 
 export { coerceTicker };
-export type { ToolContext };
