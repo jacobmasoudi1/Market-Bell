@@ -19,7 +19,7 @@ const coerceTicker = (raw?: string | null) => {
 
 async function getTodayBrief(args: ToolArgs, userId: string): Promise<ToolResponse<TodayBrief>> {
   const limit = Math.min(Math.max(Number(args.limit ?? 3), 1), 10);
-  const briefData = await buildBriefData(userId, { newsLimit: limit, moversLimit: 5 });
+  const briefData = await buildBriefData(userId, { newsLimit: limit, moversLimit: 6 });
 
   const summary = formatBrief(briefData.profile, {
     topGainers: briefData.topGainers,
