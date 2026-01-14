@@ -54,13 +54,10 @@ model Conversation {
   id            String    @id @default(cuid())
   user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   userId        String
-
   title         String?
   summary       String?
   lastMessageAt DateTime?
-
   messages      Message[]
-
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
@@ -72,15 +69,12 @@ model Message {
   id             String       @id @default(cuid())
   conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   conversationId String
-
   role           Role
   text           String
-
   toolName       String?
   toolCallId     String?
   toolArgsJson   Json?
   toolResultJson Json?
-
   createdAt      DateTime     @default(now())
 
   @@index([conversationId, createdAt])
@@ -92,7 +86,6 @@ model UserProfile {
   id            String   @id @default(cuid())
   user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   userId        String   @unique
-
   riskTolerance Risk     @default(medium)
   horizon       Horizon  @default(long)
   briefStyle    BriefStyle  @default(bullet)
@@ -109,10 +102,8 @@ model WatchlistItem {
   id        String  @id @default(cuid())
   user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
   userId    String
-
   ticker    String
   reason    String?
-
   createdAt DateTime @default(now())
 
   @@unique([userId, ticker])

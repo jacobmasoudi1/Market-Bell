@@ -32,6 +32,7 @@ export function useVoiceSession() {
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const voiceClientRef = useRef<any>(null);
+  const [userToken, setUserToken] = useState<string | null>(null);
 
   useEffect(() => {
     const savedConversation = localStorage.getItem("conversationId");
@@ -140,6 +141,23 @@ export function useVoiceSession() {
 
     setStatus("Connecting to voice agent…");
     try {
+      let token: string | undefined;
+      try {
+        const tokenResp = await fetchJson<{ userToken?: string; ok?: boolean; error?: string }>(
+          "/api/vapi/user-token",
+          { credentials: "include" },
+        );
+        token = tokenResp?.userToken;
+        if (!token) {
+          console.warn("[VoiceSession] user token missing from /api/vapi/user-token response", tokenResp);
+          setStatus("Signed-in context unavailable; using demo user.");
+        }
+      } catch (err) {
+        console.warn("[VoiceSession] user token fetch failed; continuing in demo mode", err);
+        setStatus("Signed-in context unavailable; using demo user.");
+      }
+      if (token) setUserToken(token);
+
       const module = await import("@vapi-ai/web");
       const Vapi = (module as any)?.default || (module as any)?.Vapi || module;
       if (!Vapi) {
@@ -169,9 +187,11 @@ export function useVoiceSession() {
         "16d8ea7a-bc10-40c4-bae1-9ac1a9567c74";
 
       if (client.start) {
-        await client.start(assistantId);
+        const startPayload = token ? { assistantId, metadata: { userToken: token } } : assistantId;
+        await client.start(startPayload as any);
       } else if (client.connect) {
-        await client.connect({ assistantId });
+        const connectPayload = token ? { assistantId, metadata: { userToken: token } } : { assistantId };
+        await client.connect(connectPayload as any);
       }
 
       voiceClientRef.current = client;
@@ -209,13 +229,22 @@ export function useVoiceSession() {
 
   const callTool = async (name: string, args: any, formatResult?: (res: any) => string) => {
     const toolCallId = nanoid();
+    const token = userToken;
+    if (!token) {
+      setStatus("Sign in to use tools (missing token).");
+      console.warn("[VoiceSession] Missing user token; aborting tool call", { name, argsKeys: Object.keys(args || {}) });
+      await addMessage(Role.assistant, "I need you to sign in before running tools.");
+      return;
+    }
+    const payloadArgs = { ...args, userToken: token };
     try {
       const id = await ensureConversation();
       setStatus(`Calling ${name}...`);
       const res = await fetchJson("/api/vapi/webhook", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, arguments: args }),
+        headers: { "Content-Type": "application/json", "x-from-browser": "1" },
+        credentials: "include",
+        body: JSON.stringify({ name, arguments: payloadArgs }),
       });
       const resultText =
         (formatResult && formatResult(res)) ||

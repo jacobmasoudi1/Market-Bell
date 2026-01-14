@@ -39,7 +39,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     }
 
     const titleUpdate =
-      role === Role.user && (!convo.title || !convo.title.trim()) ? buildTitle(text) : null;
+      (!convo.title || !convo.title.trim()) && (role === Role.user || role === Role.assistant)
+        ? buildTitle(text)
+        : null;
 
     const [message] = await prisma.$transaction([
       prisma.message.create({

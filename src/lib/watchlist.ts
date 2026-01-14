@@ -1,8 +1,14 @@
 import { prisma } from "@/lib/prisma";
-import { getOrCreateDefaultUser } from "@/lib/user";
+
+function assertUserId(userId?: string): string {
+  if (!userId) {
+    throw new Error("userId required");
+  }
+  return userId;
+}
 
 export async function listWatchlist(userId?: string) {
-  const uid = userId || (await getOrCreateDefaultUser());
+  const uid = assertUserId(userId);
   return prisma.watchlistItem.findMany({
     where: { userId: uid },
     orderBy: { createdAt: "desc" },
@@ -10,7 +16,7 @@ export async function listWatchlist(userId?: string) {
 }
 
 export async function addWatchlistItem(userId: string, ticker?: string, reason?: string) {
-  const uid = userId || (await getOrCreateDefaultUser());
+  const uid = assertUserId(userId);
   const symbol = (ticker || "").toUpperCase();
   if (!symbol) throw new Error("ticker required");
   return prisma.watchlistItem.upsert({
@@ -21,9 +27,15 @@ export async function addWatchlistItem(userId: string, ticker?: string, reason?:
 }
 
 export async function removeWatchlistItem(userId: string, ticker?: string) {
-  const uid = userId || (await getOrCreateDefaultUser());
+  const uid = assertUserId(userId);
   const symbol = (ticker || "").toUpperCase();
   if (!symbol) throw new Error("ticker required");
   await prisma.watchlistItem.deleteMany({ where: { userId: uid, ticker: symbol } });
   return symbol;
+}
+
+export async function clearWatchlist(userId?: string) {
+  const uid = assertUserId(userId);
+  const result = await prisma.watchlistItem.deleteMany({ where: { userId: uid } });
+  return result.count;
 }

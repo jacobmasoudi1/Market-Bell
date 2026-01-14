@@ -3,72 +3,24 @@ import { getQuote, getMovers, getNews, isValidTicker } from "@/lib/finnhub";
 import { ToolResponse, TodayBrief, WatchItem, Profile, Mover } from "@/lib/types";
 import { getNews as getNewsHelper } from "@/lib/finnhub";
 import { prisma } from "@/lib/prisma";
-import {
-  addWatchlistItem,
-  listWatchlist,
-  removeWatchlistItem,
-} from "@/lib/watchlist";
-import { getOrCreateDefaultUser } from "@/lib/user";
-import { getOrCreateProfile } from "@/lib/profile";
+import { addWatchlistItem, listWatchlist, removeWatchlistItem, clearWatchlist } from "@/lib/watchlist";
 import { getCorsHeaders, corsOptionsResponse } from "@/lib/cors";
+import { ToolArgs, ToolName } from "@/lib/vapi/toolTypes";
+import { extractToolCall, normalizeArgs } from "@/lib/vapi/parseToolCall";
+import { extractUserToken, extractUserHint, resolveUserId } from "@/lib/vapi/resolveUser";
+import { wrapVapiResponse } from "@/lib/vapi/respond";
 
-type ToolArgs = Record<string, any>;
-
-function formatResult<T>(resp: ToolResponse<T>): string {
-  if (!resp.ok) {
-    return resp.error || "An error occurred";
-  }
-  if (!resp.data) {
-    return "No data available";
-  }
-
-  const data = resp.data as any;
-
-  if (data.ticker && typeof data.price === "number") {
-    const change = data.change >= 0 ? `+${data.change}` : `${data.change}`;
-    const changePercent = data.changePercent >= 0 ? `+${data.changePercent.toFixed(2)}%` : `${data.changePercent.toFixed(2)}%`;
-    return `${data.ticker} is trading at $${data.price.toFixed(2)}, ${change} (${changePercent})`;
-  }
-
-  if (data.items && Array.isArray(data.items)) {
-    if (data.items.length === 0) return "Watchlist is empty";
-    return `Watchlist: ${data.items.map((item: any) => item.ticker).join(", ")}`;
-  }
-
-  if (data.added) return `Added ${data.added} to watchlist`;
-  if (data.removed) return `Removed ${data.removed} from watchlist`;
-
-  if (data.summary) return data.summary;
-
-  return JSON.stringify(data).replace(/\n/g, " ").replace(/\s+/g, " ").trim();
-}
-
-function wrapVapiResponse<T>(toolCallId: string, resp: ToolResponse<T>) {
-  const result = formatResult(resp);
-  return NextResponse.json(
-    {
-      results: [
-        {
-          toolCallId,
-          result,
-        },
-      ],
-    },
-    { status: 200, headers: getCorsHeaders() }
-  );
-}
+type ToolContext = { userId: string; source: string; toolCallId: string };
 
 export async function OPTIONS() {
   return corsOptionsResponse();
 }
 
-function getWatchlistData() {
-  return [] as WatchItem[];
-}
+const isDev = process.env.NODE_ENV !== "production";
+const WEBHOOK_SECRET = process.env.VAPI_WEBHOOK_SECRET;
 
-async function getTodayBrief(args: ToolArgs): Promise<ToolResponse<TodayBrief>> {
-  const userId = await getOrCreateDefaultUser();
-  const dbProfile: any = await getOrCreateProfile(userId);
+async function getTodayBrief(args: ToolArgs, userId: string): Promise<ToolResponse<TodayBrief>> {
+  const dbProfile: any = await prisma.userProfile.findUnique({ where: { userId } });
   const defaultProfile: Profile = {
     riskTolerance: "medium",
     horizon: "long",
@@ -76,10 +28,12 @@ async function getTodayBrief(args: ToolArgs): Promise<ToolResponse<TodayBrief>> 
     experience: "intermediate",
   };
   const profile: Profile = {
-    riskTolerance: dbProfile?.riskTolerance ?? "medium",
-    horizon: dbProfile?.horizon ?? "long",
-    briefStyle: (dbProfile?.briefStyle as Profile["briefStyle"]) ?? "bullet",
-    experience: (dbProfile?.experience as Profile["experience"]) ?? "intermediate",
+    riskTolerance: dbProfile?.riskTolerance ?? defaultProfile.riskTolerance,
+    horizon: dbProfile?.horizon ?? defaultProfile.horizon,
+    briefStyle: (dbProfile?.briefStyle as Profile["briefStyle"]) ?? defaultProfile.briefStyle,
+    experience: (dbProfile?.experience as Profile["experience"]) ?? defaultProfile.experience,
+    sectors: dbProfile?.sectors ?? undefined,
+    constraints: dbProfile?.constraints ?? undefined,
   };
 
   const limit = Math.min(Math.max(Number(args.limit ?? 3), 1), 10);
@@ -97,7 +51,7 @@ async function getTodayBrief(args: ToolArgs): Promise<ToolResponse<TodayBrief>> 
         topLosers: losers.data?.movers ?? [],
         headlines: news.data?.headlines ?? [],
         profile: profile ?? defaultProfile,
-        watchlist: getWatchlistData(),
+        watchlist: [],
       },
     };
   }
@@ -112,7 +66,10 @@ async function getTodayBrief(args: ToolArgs): Promise<ToolResponse<TodayBrief>> 
       topLosers: losers.data?.movers.slice(0, 5) ?? [],
       headlines: news.data?.headlines ?? [],
       profile,
-      watchlist: getWatchlistData(),
+      watchlist: (await listWatchlist(userId)).map((w) => ({
+        ...w,
+        reason: w.reason ?? undefined,
+      })),
     },
   };
 }
@@ -163,22 +120,157 @@ function formatBrief(profile: Profile, gainers: Mover[], losers: Mover[], headli
   return bullets.join(" • ");
 }
 
+type ToolHandler = (args: ToolArgs, ctx: ToolContext) => Promise<ToolResponse<any>>;
+
+const TOOL_REGISTRY: Record<ToolName, ToolHandler> = {
+  get_quote: async (args) => {
+    if (!args.ticker || typeof args.ticker !== "string") {
+      return { ok: false, error: "Please provide a ticker (spell it out letter by letter)." };
+    }
+    const ticker = args.ticker.toUpperCase();
+    if (!isValidTicker(ticker)) {
+      const spelled = ticker.split("").join("-");
+      return { ok: false, error: `Did you mean ticker ${spelled}? say yes or no.` };
+    }
+    return getQuote(ticker);
+  },
+  get_top_movers: async (args) => {
+    if (args.limit && typeof args.limit !== "number") {
+      return { ok: false, error: "Limit must be a number." };
+    }
+    return getMovers({
+      direction: args.direction === "losers" ? "losers" : "gainers",
+      limit: args.limit,
+    });
+  },
+  get_movers: async (args) => {
+    if (args.limit && typeof args.limit !== "number") {
+      return { ok: false, error: "Limit must be a number." };
+    }
+    return getMovers({
+      direction: args.direction === "losers" ? "losers" : "gainers",
+      limit: args.limit,
+    });
+  },
+  get_news: async (args) => {
+    if (args.ticker && typeof args.ticker !== "string") {
+      return { ok: false, error: "Please provide a ticker (spell it out letter by letter)." };
+    }
+    if (args.ticker && !isValidTicker(args.ticker)) {
+      const spelled = String(args.ticker).toUpperCase().split("").join("-");
+      return { ok: false, error: `Did you mean ticker ${spelled}? say yes or no.` };
+    }
+    if (args.limit && typeof args.limit !== "number") {
+      return { ok: false, error: "Limit must be a number." };
+    }
+    return getNews({
+      ticker: args.ticker,
+      limit: args.limit,
+    });
+  },
+  get_watchlist: async (_args, ctx) => {
+    const items = await listWatchlist(ctx.userId);
+    return { ok: true, data: { items } };
+  },
+  add_to_watchlist: async (args, ctx) => {
+    if (!args.ticker || typeof args.ticker !== "string") {
+      return { ok: false, error: "Please provide a ticker (spell it out letter by letter)." };
+    }
+    const ticker = args.ticker.toUpperCase();
+    if (!isValidTicker(ticker)) {
+      const spelled = ticker.split("").join("-");
+      return { ok: false, error: `Did you mean ticker ${spelled}? say yes or no.` };
+    }
+    if (args.confirm !== true) {
+      const spelled = ticker.split("").join("-");
+      return { ok: false, error: `Confirm add ${ticker}? Say yes to add ${spelled} or no to cancel.` };
+    }
+    const item = await addWatchlistItem(ctx.userId, ticker, args.reason);
+    return { ok: true, data: { added: item.ticker } };
+  },
+  remove_from_watchlist: async (args, ctx) => {
+    const rawTicker = args.ticker;
+    const wantsAll =
+      args?.all === true ||
+      args?.clear === true ||
+      (typeof rawTicker === "string" && ["all", "clear all", "*"].includes(rawTicker.toLowerCase()));
+
+    if (wantsAll || !rawTicker) {
+      const count = await clearWatchlist(ctx.userId);
+      return { ok: true, data: { removed: count ? "all" : "none" } };
+    }
+
+    if (!isValidTicker(rawTicker)) {
+      return { ok: false, error: "Please provide a valid ticker to remove." };
+    }
+
+    const removed = await removeWatchlistItem(ctx.userId, rawTicker);
+    return { ok: true, data: { removed } };
+  },
+  get_today_brief: async (args, ctx) => {
+    return getTodayBrief(args, ctx.userId);
+  },
+  get_user_profile: async (_args, ctx) => {
+    const dbProfile: any = await prisma.userProfile.findFirst({
+      where: { userId: ctx.userId },
+    });
+    if (!dbProfile) {
+      return {
+        ok: true,
+        data: {
+          riskTolerance: "medium",
+          horizon: "long",
+          briefStyle: "bullet",
+          experience: "intermediate",
+        },
+      };
+    }
+    return {
+      ok: true,
+      data: {
+        riskTolerance: dbProfile.riskTolerance,
+        horizon: dbProfile.horizon,
+        briefStyle: dbProfile.briefStyle as Profile["briefStyle"],
+        experience: dbProfile.experience as Profile["experience"],
+        sectors: dbProfile.sectors ?? undefined,
+        constraints: dbProfile.constraints ?? undefined,
+      },
+    };
+  },
+};
+
+const TOOL_ALIASES: Partial<Record<ToolName, ToolName>> = {
+  get_top_movers: "get_movers",
+};
+
+// Allow simple GET to avoid 405 noise / health checks
+export async function GET() {
+  return NextResponse.json({ ok: true, message: "webhook alive" }, { status: 200, headers: getCorsHeaders() });
+}
+
 export async function POST(req: NextRequest) {
-  const body = await req.json().catch(() => ({}));
-  console.log("Webhook received body:", body);
+  if (WEBHOOK_SECRET) {
+    const secretHeader = req.headers.get("x-webhook-secret");
+    if (!secretHeader || secretHeader !== WEBHOOK_SECRET) {
+      return NextResponse.json(
+        {
+          results: [
+            { toolCallId: "unknown", result: "Invalid webhook secret" },
+          ],
+        },
+        { status: 401, headers: getCorsHeaders() }
+      );
+    }
+  }
 
-  const name = body?.name || body?.tool;
-  const args: ToolArgs = body?.arguments ?? body?.args ?? {};
-  const toolCallId = body?.toolCallId || body?.id || "unknown";
-
-  if (!name) {
-    console.error("Webhook missing tool name", body);
+  const contentType = req.headers.get("content-type") || "";
+  if (!contentType.includes("application/json")) {
     return NextResponse.json(
       {
         results: [
           {
-            toolCallId,
-            result: "Error: Missing tool name",
+            toolCallId: "unknown",
+            result: "Invalid content-type. Expect application/json.",
           },
         ],
       },
@@ -186,108 +278,104 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  switch (name) {
-    case "get_quote": {
-      const ticker = String(args.ticker ?? "AAPL").toUpperCase();
-      return wrapVapiResponse(toolCallId, await getQuote(ticker));
-    }
-    case "get_top_movers": {
-      return wrapVapiResponse(
-        toolCallId,
-        await getMovers({
-          direction: args.direction === "losers" ? "losers" : "gainers",
-          limit: args.limit,
-        }),
-      );
-    }
-    case "add_to_watchlist": {
+  const body = await req.json().catch(() => ({}));
+  console.log("[Webhook] received keys", Object.keys(body));
+
+  const extracted = extractToolCall(body);
+  let name = extracted.name;
+  let args: ToolArgs = extracted.args ?? {};
+  let toolCallId = extracted.toolCallId ?? "unknown";
+
+  const parseArgs = (argValue: any): ToolArgs => {
+    if (typeof argValue === "string") {
       try {
-        const userId = await getOrCreateDefaultUser();
-        if (!isValidTicker(args.ticker)) {
-          return wrapVapiResponse(toolCallId, {
-            ok: false,
-            error: "Ticker not recognized. Please spell it letter-by-letter.",
-          });
-        }
-        const item = await addWatchlistItem(userId, args.ticker, args.reason);
-        return wrapVapiResponse(toolCallId, { ok: true, data: { added: item.ticker } });
-      } catch (err: any) {
-        return wrapVapiResponse(toolCallId, { ok: false, error: err.message });
+        return JSON.parse(argValue);
+      } catch {
+        return {};
       }
     }
-    case "get_watchlist": {
-      try {
-        const userId = await getOrCreateDefaultUser();
-        const items = await listWatchlist(userId);
-        return wrapVapiResponse(toolCallId, { ok: true, data: { items } });
-      } catch (err: any) {
-        return wrapVapiResponse(toolCallId, { ok: false, error: err.message });
-      }
-    }
-    case "remove_from_watchlist": {
-      try {
-        const userId = await getOrCreateDefaultUser();
-        const removed = await removeWatchlistItem(userId, args.ticker);
-        return wrapVapiResponse(toolCallId, { ok: true, data: { removed } });
-      } catch (err: any) {
-        return wrapVapiResponse(toolCallId, { ok: false, error: err.message });
-      }
-    }
-    case "save_user_profile": {
-      return wrapVapiResponse(toolCallId, { ok: false, error: "Not implemented in webhook" });
-    }
-    case "get_user_profile": {
-      const userId = "demo-user";
-      const dbProfile: any = await prisma.userProfile.findFirst({
-        where: { userId },
-      });
-      if (!dbProfile) {
-        return wrapVapiResponse(toolCallId, {
-          ok: true,
-          data: {
-            riskTolerance: "medium",
-            horizon: "long",
-            briefStyle: "bullet",
-            experience: "intermediate",
+    return argValue ?? {};
+  };
+
+  args = normalizeArgs(parseArgs(args));
+
+  const { token: userToken, source: tokenSource } = extractUserToken(body, args, req);
+  const userHint = isDev ? extractUserHint(body, args, req) : undefined;
+  const fromBrowser = req.headers.get("x-from-browser") === "1";
+  const allowDemo = isDev && req.headers.get("x-allow-demo") === "1";
+
+  console.log("[Webhook] extracted tool call", {
+    name,
+    toolCallId,
+    argsKeys: Object.keys(args),
+    userHint,
+    hasUserToken: Boolean(userToken),
+    tokenSource,
+  });
+
+  if (!name || typeof name !== "string" || !name.trim()) {
+    const receivedKeys = Object.keys(body);
+    console.error("=== WEBHOOK MISSING TOOL NAME ===");
+    console.error("Received keys:", receivedKeys);
+    console.error("Full received body:", JSON.stringify(body, null, 2));
+    console.error("Extracted values:", { name, toolCallId, args });
+    console.error("=================================");
+    return NextResponse.json(
+      {
+        results: [
+          {
+            toolCallId,
+            result: `Error: Missing tool name. Received keys: ${receivedKeys.join(", ")}. Full body logged to server.`,
           },
-        });
-      }
-      return wrapVapiResponse(toolCallId, {
-        ok: true,
-        data: {
-          riskTolerance: dbProfile.riskTolerance,
-          horizon: dbProfile.horizon,
-          briefStyle: dbProfile.briefStyle as Profile["briefStyle"],
-          experience: dbProfile.experience as Profile["experience"],
-          sectors: dbProfile.sectors ?? undefined,
-          constraints: dbProfile.constraints ?? undefined,
-        },
-      });
-    }
-    case "get_news": {
-      return wrapVapiResponse(
-        toolCallId,
-        await getNews({
-          ticker: isValidTicker(args.ticker) ? args.ticker : undefined,
-          limit: args.limit,
-        }),
-      );
-    }
-    case "get_today_brief": {
-      return wrapVapiResponse(toolCallId, await getTodayBrief(args));
-    }
-    default:
-      console.error("Webhook unknown tool", name, body);
-      return NextResponse.json(
-        {
-          results: [
-            {
-              toolCallId,
-              result: `Unknown tool: ${name}`,
-            },
-          ],
-        },
-        { status: 200, headers: getCorsHeaders() }
-      );
+        ],
+      },
+      { status: 200, headers: getCorsHeaders() }
+    );
+  }
+
+  const normalizedName = name.toLowerCase().replace(/-/g, "_") as ToolName | string;
+  const resolvedName = (TOOL_ALIASES[normalizedName as ToolName] ?? normalizedName) as string;
+
+  const { userId, source, error, tokenSource: resolvedTokenSource } = await resolveUserId({
+    userToken,
+    userHint,
+    fromBrowser,
+    allowDemo,
+  });
+  if (!userId || error) {
+    const errMsg = error || "Unauthorized";
+    console.error("[Webhook] user resolution failed", {
+      error: errMsg,
+      fromBrowser,
+      hasToken: Boolean(userToken),
+      tokenSource,
+    });
+    return wrapVapiResponse(toolCallId, { ok: false, error: errMsg });
+  }
+  console.log("[Webhook] resolved user", { userId, source, tokenSource: resolvedTokenSource ?? tokenSource });
+
+  const handler = TOOL_REGISTRY[resolvedName as ToolName];
+
+  if (!handler) {
+    console.error("Webhook unknown tool", resolvedName, body);
+    return NextResponse.json(
+      {
+        results: [
+          {
+            toolCallId,
+            result: `Unknown tool: ${resolvedName}`,
+          },
+        ],
+      },
+      { status: 200, headers: getCorsHeaders() }
+    );
+  }
+
+  try {
+    const result = await handler(args, { userId, source: source || "unknown", toolCallId });
+    return wrapVapiResponse(toolCallId, result);
+  } catch (err: any) {
+    console.error("[Webhook] tool handler error", err);
+    return wrapVapiResponse(toolCallId, { ok: false, error: err?.message || "Tool error" });
   }
 }
