@@ -1,10 +1,10 @@
+import { isValidTicker } from "@/lib/ticker";
 import { Headline, Mover, QuoteData, ToolResponse } from "@/lib/types";
+
+export { isValidTicker } from "@/lib/ticker";
 
 const FINNHUB_BASE = "https://finnhub.io/api/v1";
 const DEFAULT_UNIVERSE = ["AAPL", "MSFT", "NVDA", "AMZN", "META", "TSLA", "GOOGL", "AVGO"];
-
-export const isValidTicker = (value?: string) =>
-  !!value && /^[A-Z.\-]{1,10}$/.test(value.trim().toUpperCase());
 
 const invalidTickerError =
   "Ticker not recognized. Please spell it letter-by-letter (e.g., A-P-L).";

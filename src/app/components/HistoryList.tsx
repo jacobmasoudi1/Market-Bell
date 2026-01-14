@@ -1,6 +1,6 @@
 "use client";
 
-import { HistoryEntry } from "@/hooks/useVoiceSession";
+import { HistoryEntry } from "@/hooks/useConversation";
 
 type Props = {
   history: HistoryEntry[];

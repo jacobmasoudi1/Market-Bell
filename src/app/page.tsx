@@ -1,11 +1,13 @@
 "use client";
 
+import { useEffect, useState } from "react";
+import { signIn, signOut, useSession } from "next-auth/react";
 import { HistoryList } from "./components/HistoryList";
 import { SessionHeader } from "./components/SessionHeader";
 import { TranscriptList } from "./components/TranscriptList";
-import { useVoiceSession } from "@/hooks/useVoiceSession";
-import { useEffect, useState } from "react";
-import { signIn, signOut, useSession } from "next-auth/react";
+import { useAgentTools } from "@/hooks/useAgentTools";
+import { useConversation } from "@/hooks/useConversation";
+import { useVoiceClient } from "@/hooks/useVoiceClient";
 import { ProfileForm, Profile } from "./components/ProfileForm";
 import { ProfileSummary } from "./components/ProfileSummary";
 import { fetchJson } from "@/lib/fetchJson";
@@ -13,18 +15,28 @@ import { Watchlist } from "./components/Watchlist";
 
 export default function Home() {
   const {
-    isSessionActive,
-    status,
     transcript,
     history,
     conversationId,
-    toggleVoice,
+    addMessage,
+    ensureConversation,
+    loadHistory,
     selectConversation,
-    fetchQuote,
-    fetchNews,
-    fetchTodayBrief,
     startNewConversation,
-  } = useVoiceSession();
+  } = useConversation();
+
+  const { isSessionActive, status, setStatus, userToken, toggleVoice } = useVoiceClient({
+    addMessage,
+    ensureConversation,
+  });
+
+  const { fetchQuote, fetchNews, fetchTodayBrief } = useAgentTools({
+    userToken,
+    setStatus,
+    addMessage,
+    ensureConversation,
+    loadHistory,
+  });
 
   const [quoteTicker, setQuoteTicker] = useState("AAPL");
   const [newsTicker, setNewsTicker] = useState("");

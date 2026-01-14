@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { TranscriptEntry } from "@/hooks/useVoiceSession";
+import { TranscriptEntry } from "@/hooks/useConversation";
 
 type Props = {
   transcript: TranscriptEntry[];
