@@ -2,6 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { buildBriefData, formatBrief } from "@/lib/brief";
 import { getQuote, getMovers, getNews } from "@/lib/finnhub";
 import { validateTickerForTool } from "@/lib/ticker";
+import {
+  storePendingConfirmation,
+  getPendingConfirmation,
+  clearPendingConfirmation,
+  isAffirmativeResponse,
+} from "@/lib/pendingConfirmations";
 import { ToolResponse, TodayBrief, Profile } from "@/lib/types";
 import { prisma } from "@/lib/prisma";
 import { addWatchlistItem, listWatchlist, removeWatchlistItem, clearWatchlist } from "@/lib/watchlist";
@@ -11,7 +17,7 @@ import { extractToolCall, normalizeArgs } from "@/lib/vapi/parseToolCall";
 import { extractUserToken, extractUserHint, resolveUserId } from "@/lib/vapi/resolveUser";
 import { wrapVapiResponse } from "@/lib/vapi/respond";
 
-type ToolContext = { userId: string; source: string; toolCallId: string };
+type ToolContext = { userId: string; source: string; toolCallId: string; conversationId?: string };
 
 export async function OPTIONS() {
   return corsOptionsResponse();
@@ -49,13 +55,21 @@ async function getTodayBrief(args: ToolArgs, userId: string): Promise<ToolRespon
 type ToolHandler = (args: ToolArgs, ctx: ToolContext) => Promise<ToolResponse<any>>;
 
 const TOOL_REGISTRY: Record<ToolName, ToolHandler> = {
-  get_quote: async (args) => {
+  get_quote: async (args, ctx) => {
     const validation = validateTickerForTool(args.ticker, {
       confirm: args.confirm === true,
       action: "get a quote for",
     });
-    if (!validation.ok) return { ok: false, error: validation.error };
-    return getQuote(validation.ticker!);
+    if (validation.status === "invalid") {
+      return { ok: false, error: validation.error };
+    }
+    if (validation.status === "needs_confirm") {
+      if (ctx.conversationId) {
+        storePendingConfirmation(ctx.conversationId, "get_quote", validation.ticker, args, ctx.userId);
+      }
+      return { ok: false, error: validation.error };
+    }
+    return getQuote(validation.ticker);
   },
   get_top_movers: async (args) => {
     if (args.limit && typeof args.limit !== "number") {
@@ -75,18 +89,26 @@ const TOOL_REGISTRY: Record<ToolName, ToolHandler> = {
       limit: args.limit,
     });
   },
-  get_news: async (args) => {
+  get_news: async (args, ctx) => {
     const validation = validateTickerForTool(args.ticker, {
       allowEmpty: true,
       confirm: args.confirm === true,
       action: "get news for",
     });
-    if (!validation.ok) return { ok: false, error: validation.error };
+    if (validation.status === "invalid") {
+      return { ok: false, error: validation.error };
+    }
+    if (validation.status === "needs_confirm") {
+      if (ctx.conversationId && validation.ticker) {
+        storePendingConfirmation(ctx.conversationId, "get_news", validation.ticker, args, ctx.userId);
+      }
+      return { ok: false, error: validation.error };
+    }
     if (args.limit && typeof args.limit !== "number") {
       return { ok: false, error: "Limit must be a number." };
     }
     return getNews({
-      ticker: validation.ticker,
+      ticker: validation.ticker || undefined,
       limit: args.limit,
     });
   },
@@ -99,9 +121,17 @@ const TOOL_REGISTRY: Record<ToolName, ToolHandler> = {
       confirm: args.confirm === true,
       action: "add",
     });
-    if (!validation.ok) return { ok: false, error: validation.error };
+    if (validation.status === "invalid") {
+      return { ok: false, error: validation.error };
+    }
+    if (validation.status === "needs_confirm") {
+      if (ctx.conversationId) {
+        storePendingConfirmation(ctx.conversationId, "add_to_watchlist", validation.ticker, args, ctx.userId);
+      }
+      return { ok: false, error: validation.error };
+    }
 
-    const item = await addWatchlistItem(ctx.userId, validation.ticker!, args.reason);
+    const item = await addWatchlistItem(ctx.userId, validation.ticker, args.reason);
     return { ok: true, data: { added: item.ticker } };
   },
   remove_from_watchlist: async (args, ctx) => {
@@ -109,7 +139,8 @@ const TOOL_REGISTRY: Record<ToolName, ToolHandler> = {
     const wantsAll =
       args?.all === true ||
       args?.clear === true ||
-      (typeof rawTicker === "string" && ["all", "clear all", "*"].includes(rawTicker.toLowerCase()));
+      (typeof rawTicker === "string" &&
+        ["all", "clear all", "clear", "*", "everything", "remove all"].includes(rawTicker.toLowerCase()));
 
     if (wantsAll || !rawTicker) {
       const count = await clearWatchlist(ctx.userId);
@@ -120,9 +151,17 @@ const TOOL_REGISTRY: Record<ToolName, ToolHandler> = {
       confirm: args.confirm === true,
       action: "remove",
     });
-    if (!validation.ok) return { ok: false, error: validation.error };
+    if (validation.status === "invalid") {
+      return { ok: false, error: validation.error };
+    }
+    if (validation.status === "needs_confirm") {
+      if (ctx.conversationId) {
+        storePendingConfirmation(ctx.conversationId, "remove_from_watchlist", validation.ticker, args, ctx.userId);
+      }
+      return { ok: false, error: validation.error };
+    }
 
-    const removed = await removeWatchlistItem(ctx.userId, validation.ticker!);
+    const removed = await removeWatchlistItem(ctx.userId, validation.ticker);
     return { ok: true, data: { removed } };
   },
   get_today_brief: async (args, ctx) => {
@@ -161,7 +200,6 @@ const TOOL_ALIASES: Partial<Record<ToolName, ToolName>> = {
   get_top_movers: "get_movers",
 };
 
-// Allow simple GET to avoid 405 noise / health checks
 export async function GET() {
   return NextResponse.json({ ok: true, message: "webhook alive" }, { status: 200, headers: getCorsHeaders() });
 }
@@ -199,6 +237,12 @@ export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => ({}));
   console.log("[Webhook] received keys", Object.keys(body));
 
+  const conversationId =
+    (body as { metadata?: { conversationId?: string } })?.metadata?.conversationId ||
+    (body as { call?: { metadata?: { conversationId?: string } } })?.call?.metadata?.conversationId ||
+    (body as { conversationId?: string })?.conversationId ||
+    undefined;
+
   const extracted = extractToolCall(body);
   const name = extracted.name;
   let args: ToolArgs = extracted.args ?? {};
@@ -225,6 +269,7 @@ export async function POST(req: NextRequest) {
   console.log("[Webhook] extracted tool call", {
     name,
     toolCallId,
+    conversationId,
     argsKeys: Object.keys(args),
     userHint,
     hasUserToken: Boolean(userToken),
@@ -272,6 +317,44 @@ export async function POST(req: NextRequest) {
   }
   console.log("[Webhook] resolved user", { userId, source, tokenSource: resolvedTokenSource ?? tokenSource });
 
+  if (conversationId) {
+    const userText =
+      (typeof args.ticker === "string" ? args.ticker : "") ||
+      (typeof (args as { message?: string }).message === "string" ? (args as { message: string }).message : "") ||
+      (typeof (args as { text?: string }).text === "string" ? (args as { text: string }).text : "") ||
+      "";
+
+    if (isAffirmativeResponse(userText)) {
+      const tickerTools: ToolName[] = ["get_quote", "get_news", "add_to_watchlist", "remove_from_watchlist"];
+      for (const toolName of tickerTools) {
+        const pending = getPendingConfirmation(conversationId, toolName);
+        if (pending && pending.userId === userId) {
+          console.log("[Webhook] found pending confirmation, executing", { toolName, ticker: pending.ticker });
+          clearPendingConfirmation(conversationId, toolName, pending.ticker);
+          const handler = TOOL_REGISTRY[toolName];
+          if (handler) {
+            try {
+              const confirmedArgs = { ...pending.args, confirm: true, ticker: pending.ticker };
+              const result = await handler(confirmedArgs, {
+                userId,
+                source: source || "unknown",
+                toolCallId,
+                conversationId,
+              });
+              return wrapVapiResponse(toolCallId, result);
+            } catch (err: unknown) {
+              console.error("[Webhook] pending confirmation execution error", err);
+              return wrapVapiResponse(toolCallId, {
+                ok: false,
+                error: err instanceof Error ? err.message : "Tool error",
+              });
+            }
+          }
+        }
+      }
+    }
+  }
+
   const handler = TOOL_REGISTRY[resolvedName as ToolName];
 
   if (!handler) {
@@ -290,10 +373,18 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const result = await handler(args, { userId, source: source || "unknown", toolCallId });
+    const result = await handler(args, {
+      userId,
+      source: source || "unknown",
+      toolCallId,
+      conversationId,
+    });
     return wrapVapiResponse(toolCallId, result);
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error("[Webhook] tool handler error", err);
-    return wrapVapiResponse(toolCallId, { ok: false, error: err?.message || "Tool error" });
+    return wrapVapiResponse(toolCallId, {
+      ok: false,
+      error: err instanceof Error ? err.message : "Tool error",
+    });
   }
 }

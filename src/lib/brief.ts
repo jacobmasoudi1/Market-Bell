@@ -1,7 +1,7 @@
 import { getMovers, getNews as getNewsHelper } from "@/lib/finnhub";
 import { prisma } from "@/lib/prisma";
 import { listWatchlist } from "@/lib/watchlist";
-import { Mover, Profile, WatchItem } from "@/lib/types";
+import { Mover, Profile, WatchItem, Headline } from "@/lib/types";
 
 const DEFAULT_PROFILE: Profile = {
   riskTolerance: "medium",
@@ -16,10 +16,24 @@ export type BriefData = {
   profile: Profile;
   topGainers: Mover[];
   topLosers: Mover[];
-  headlines: { title: string }[];
+  headlines: Headline[];
   watchlist: (WatchItem & { reason?: string | null })[];
   errors: string[];
 };
+
+type MoversCacheEntry = {
+  data: Mover[];
+  expiresAt: number;
+};
+
+type NewsCacheEntry = {
+  data: Headline[];
+  expiresAt: number;
+};
+
+const moversCache = new Map<string, MoversCacheEntry>();
+const newsCache = new Map<string, NewsCacheEntry>();
+const CACHE_TTL_MS = 45 * 1000;
 
 async function loadProfile(userId: string): Promise<Profile> {
   const dbProfile = await prisma.userProfile.findUnique({ where: { userId } });
@@ -33,36 +47,83 @@ async function loadProfile(userId: string): Promise<Profile> {
   };
 }
 
+async function getCachedMovers(direction: "gainers" | "losers", limit: number): Promise<Mover[]> {
+  const cacheKey = `${direction}:${limit}`;
+  const cached = moversCache.get(cacheKey);
+  const now = Date.now();
+
+  if (cached && cached.expiresAt > now) {
+    return cached.data;
+  }
+
+  try {
+    const resp = await getMovers({ direction, limit });
+    const movers = resp.ok ? resp.data?.movers ?? [] : [];
+
+    if (resp.ok && movers.length > 0) {
+      moversCache.set(cacheKey, {
+        data: movers,
+        expiresAt: now + CACHE_TTL_MS,
+      });
+      return movers;
+    }
+  } catch (err) {
+    console.error("[Brief] movers fetch error", err);
+  }
+
+  return [];
+}
+
+async function getCachedNews(limit: number): Promise<Headline[]> {
+  const cacheKey = `general:${limit}`;
+  const cached = newsCache.get(cacheKey);
+  const now = Date.now();
+
+  if (cached && cached.expiresAt > now) {
+    return cached.data;
+  }
+
+  try {
+    const resp = await getNewsHelper({ limit });
+    const headlines = resp.ok ? resp.data?.headlines ?? [] : [];
+
+    if (resp.ok && headlines.length > 0) {
+      newsCache.set(cacheKey, {
+        data: headlines,
+        expiresAt: now + CACHE_TTL_MS,
+      });
+      return headlines;
+    }
+  } catch (err) {
+    console.error("[Brief] news fetch error", err);
+  }
+
+  return [];
+}
+
 export async function buildBriefData(
   userId: string,
   options: { newsLimit?: number; moversLimit?: number } = {},
 ): Promise<BriefData> {
-  const profile = await loadProfile(userId);
   const newsLimit = clamp(Number(options.newsLimit ?? 3), 1, 10);
   const moversLimit = clamp(Number(options.moversLimit ?? 5), 1, 10);
 
   const errors: string[] = [];
 
-  const [gainersResp, losersResp, newsResp] = await Promise.all([
-    getMovers({ direction: "gainers", limit: moversLimit }),
-    getMovers({ direction: "losers", limit: moversLimit }),
-    getNewsHelper({ limit: newsLimit }),
+  const [profile, watchlist, topGainers, topLosers, headlines] = await Promise.all([
+    loadProfile(userId),
+    listWatchlist(userId),
+    getCachedMovers("gainers", moversLimit),
+    getCachedMovers("losers", moversLimit),
+    getCachedNews(newsLimit),
   ]);
 
-  const topGainers = gainersResp.ok ? gainersResp.data?.movers ?? [] : [];
-  const topLosers = losersResp.ok ? losersResp.data?.movers ?? [] : [];
-  const headlines = newsResp.ok ? newsResp.data?.headlines ?? [] : [];
-
-  if (!gainersResp.ok) errors.push("gainers");
-  if (!losersResp.ok) errors.push("losers");
-  if (!newsResp.ok) errors.push("news");
-
-  const watchlist = (await listWatchlist(userId)).map((w) => ({
+  const formattedWatchlist = watchlist.map((w) => ({
     ...w,
     reason: w.reason ?? undefined,
   }));
 
-  return { profile, topGainers, topLosers, headlines, watchlist, errors };
+  return { profile, topGainers, topLosers, headlines, watchlist: formattedWatchlist, errors };
 }
 
 export function formatBrief(

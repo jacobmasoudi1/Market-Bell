@@ -1,8 +1,9 @@
 const TICKER_REGEX = /^[A-Z]{1,5}(?:\.[A-Z]{1,2})?$/;
 
 export type TickerValidationResult =
-  | { ok: true; ticker?: string }
-  | { ok: false; error: string; needsConfirm?: boolean; ticker?: string };
+  | { status: "ok"; ticker: string }
+  | { status: "needs_confirm"; error: string; ticker: string }
+  | { status: "invalid"; error: string; ticker?: string };
 
 export const normalizeTicker = (value?: string | null): string | undefined => {
   if (!value) return undefined;
@@ -30,30 +31,41 @@ export const validateTickerForTool = (
   const { confirm = false, allowEmpty = false, action } = options;
 
   if (!rawTicker || rawTicker.trim() === "") {
-    if (allowEmpty) return { ok: true, ticker: undefined };
-    return { ok: false, error: "Please provide a ticker (spell it out letter by letter)." };
+    if (allowEmpty) {
+      return { status: "ok", ticker: "" };
+    }
+    return {
+      status: "invalid",
+      error: "Please provide a ticker (spell it out letter by letter).",
+    };
   }
 
   const ticker = normalizeTicker(rawTicker);
   if (!ticker) {
-    return { ok: false, error: "Please provide a ticker (spell it out letter by letter)." };
+    return {
+      status: "invalid",
+      error: "Please provide a ticker (spell it out letter by letter).",
+    };
   }
 
   if (!isValidTicker(ticker)) {
     const spelled = spellTicker(ticker);
-    return { ok: false, error: `Did you mean ticker ${spelled}? say yes or no.`, needsConfirm: true, ticker };
+    return {
+      status: "needs_confirm",
+      error: `Did you mean ticker ${spelled}? say yes or no.`,
+      ticker,
+    };
   }
 
   if (!confirm) {
     const spelled = spellTicker(ticker);
     const actionText = action ? `${action} ${ticker}` : `ticker ${ticker}`;
     return {
-      ok: false,
+      status: "needs_confirm",
       error: `Confirm ${actionText}? Say yes to proceed with ${spelled} or no to cancel.`,
-      needsConfirm: true,
       ticker,
     };
   }
 
-  return { ok: true, ticker };
+  return { status: "ok", ticker };
 };

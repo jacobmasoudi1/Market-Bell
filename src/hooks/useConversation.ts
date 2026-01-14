@@ -44,7 +44,6 @@ export function useConversation() {
     } else {
       loadHistory();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const addMessage = async (role: Role, text?: string, extras?: AddMessageExtras) => {
