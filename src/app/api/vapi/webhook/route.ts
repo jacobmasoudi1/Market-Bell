@@ -248,6 +248,15 @@ export async function POST(req: NextRequest) {
   let args: ToolArgs = extracted.args ?? {};
   const toolCallId = extracted.toolCallId ?? "unknown";
 
+  const userText =
+    (typeof args.ticker === "string" ? args.ticker : "") ||
+    (typeof (args as { message?: string }).message === "string" ? (args as { message: string }).message : "") ||
+    (typeof (args as { text?: string }).text === "string" ? (args as { text: string }).text : "") ||
+    (typeof body?.message === "string" ? body.message : "") ||
+    (typeof body?.text === "string" ? body.text : "") ||
+    (typeof body?.userMessage === "string" ? body.userMessage : "") ||
+    "";
+
   const parseArgs = (argValue: unknown): ToolArgs => {
     if (typeof argValue === "string") {
       try {
@@ -259,7 +268,7 @@ export async function POST(req: NextRequest) {
     return argValue ?? {};
   };
 
-  args = normalizeArgs(parseArgs(args));
+  args = normalizeArgs(parseArgs(args), userText);
 
   const { token: userToken, source: tokenSource } = extractUserToken(body, args, req);
   const userHint = isDev ? extractUserHint(body, args, req) : undefined;
@@ -317,38 +326,31 @@ export async function POST(req: NextRequest) {
   }
   console.log("[Webhook] resolved user", { userId, source, tokenSource: resolvedTokenSource ?? tokenSource });
 
-  if (conversationId) {
-    const userText =
-      (typeof args.ticker === "string" ? args.ticker : "") ||
-      (typeof (args as { message?: string }).message === "string" ? (args as { message: string }).message : "") ||
-      (typeof (args as { text?: string }).text === "string" ? (args as { text: string }).text : "") ||
-      "";
-
-    if (isAffirmativeResponse(userText)) {
-      const tickerTools: ToolName[] = ["get_quote", "get_news", "add_to_watchlist", "remove_from_watchlist"];
-      for (const toolName of tickerTools) {
-        const pending = getPendingConfirmation(conversationId, toolName);
-        if (pending && pending.userId === userId) {
-          console.log("[Webhook] found pending confirmation, executing", { toolName, ticker: pending.ticker });
-          clearPendingConfirmation(conversationId, toolName, pending.ticker);
-          const handler = TOOL_REGISTRY[toolName];
-          if (handler) {
-            try {
-              const confirmedArgs = { ...pending.args, confirm: true, ticker: pending.ticker };
-              const result = await handler(confirmedArgs, {
-                userId,
-                source: source || "unknown",
-                toolCallId,
-                conversationId,
-              });
-              return wrapVapiResponse(toolCallId, result);
-            } catch (err: unknown) {
-              console.error("[Webhook] pending confirmation execution error", err);
-              return wrapVapiResponse(toolCallId, {
-                ok: false,
-                error: err instanceof Error ? err.message : "Tool error",
-              });
-            }
+  if (conversationId && (args.confirm === true || isAffirmativeResponse(userText))) {
+    const tickerTools: ToolName[] = ["get_quote", "get_news", "add_to_watchlist", "remove_from_watchlist"];
+    for (const toolName of tickerTools) {
+      const pending = getPendingConfirmation(conversationId, toolName);
+      if (pending && pending.userId === userId) {
+        console.log("[Webhook] found pending confirmation, executing", { toolName, ticker: pending.ticker });
+        clearPendingConfirmation(conversationId, toolName, pending.ticker);
+        const handler = TOOL_REGISTRY[toolName];
+        if (handler) {
+          try {
+            // Explicitly set confirm: true when executing pending confirmation
+            const confirmedArgs = { ...pending.args, confirm: true, ticker: pending.ticker };
+            const result = await handler(confirmedArgs, {
+              userId,
+              source: source || "unknown",
+              toolCallId,
+              conversationId,
+            });
+            return wrapVapiResponse(toolCallId, result);
+          } catch (err: unknown) {
+            console.error("[Webhook] pending confirmation execution error", err);
+            return wrapVapiResponse(toolCallId, {
+              ok: false,
+              error: err instanceof Error ? err.message : "Tool error",
+            });
           }
         }
       }

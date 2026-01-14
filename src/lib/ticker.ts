@@ -52,7 +52,7 @@ export const validateTickerForTool = (
     const spelled = spellTicker(ticker);
     return {
       status: "needs_confirm",
-      error: `Did you mean ticker ${spelled}? say yes or no.`,
+      error: `Did you mean ticker ${spelled}? To confirm, call this tool again with confirm: true. To cancel, call with confirm: false.`,
       ticker,
     };
   }
@@ -62,7 +62,7 @@ export const validateTickerForTool = (
     const actionText = action ? `${action} ${ticker}` : `ticker ${ticker}`;
     return {
       status: "needs_confirm",
-      error: `Confirm ${actionText}? Say yes to proceed with ${spelled} or no to cancel.`,
+      error: `Confirm ${actionText}? To proceed with ${spelled}, call this tool again with confirm: true. To cancel, call with confirm: false.`,
       ticker,
     };
   }

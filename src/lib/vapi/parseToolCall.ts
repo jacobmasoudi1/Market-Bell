@@ -1,3 +1,5 @@
+import { extractConfirmFlag } from "@/lib/pendingConfirmations";
+
 export function extractToolCall(body: any): { name?: string; args?: any; toolCallId?: string } {
   if (!body || typeof body !== "object") return {};
 
@@ -51,7 +53,7 @@ export function extractToolCall(body: any): { name?: string; args?: any; toolCal
   };
 }
 
-export function normalizeArgs(raw: any) {
+export function normalizeArgs(raw: any, userText?: string) {
   if (!raw || typeof raw !== "object") return {};
   const a: any = { ...raw };
   if (a.tickerr && !a.ticker) a.ticker = a.tickerr;
@@ -62,5 +64,13 @@ export function normalizeArgs(raw: any) {
     a.ticker = a.ticker.trim();
     if (a.ticker === "") a.ticker = undefined;
   }
+  
+  if (a.confirm === undefined && userText) {
+    const extractedConfirm = extractConfirmFlag(userText);
+    if (extractedConfirm !== undefined) {
+      a.confirm = extractedConfirm;
+    }
+  }
+  
   return a;
 }
