@@ -132,6 +132,11 @@ const TOOL_REGISTRY: Record<CanonicalToolName, ToolHandler> = {
       }
       return { ok: true, data: { added: validation.ticker, speech: `Added ${validation.ticker} to your watchlist.` } };
     } catch (err: any) {
+      console.error("Watchlist add failed", {
+        userId: ctx.userId,
+        ticker: validation.ticker,
+        error: err instanceof Error ? err.message : String(err),
+      });
       return { ok: false, error: "Unable to add to watchlist right now." };
     }
   },
@@ -163,8 +168,17 @@ const TOOL_REGISTRY: Record<CanonicalToolName, ToolHandler> = {
       return { ok: false, error: validation.error };
     }
 
-    const removed = await removeWatchlistItem(ctx.userId, validation.ticker);
-    return { ok: true, data: { removed } };
+    try {
+      const removed = await removeWatchlistItem(ctx.userId, validation.ticker);
+      return { ok: true, data: { removed } };
+    } catch (err: any) {
+      console.error("Watchlist remove failed", {
+        userId: ctx.userId,
+        ticker: validation.ticker,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return { ok: false, error: "Unable to remove from watchlist right now." };
+    }
   },
   get_today_brief: async (args, ctx) => {
     return getTodayBrief(args, ctx.userId);

@@ -73,23 +73,17 @@ export async function buildVapiContext(req: NextRequest, body: any): Promise<Vap
   args = normalizeArgs(parseArgs(args), userText);
 
   if (!name || typeof name !== "string" || !name.trim()) {
-    const receivedKeys = Object.keys(body);
-    console.error("=== WEBHOOK MISSING TOOL NAME ===");
-    console.error("Received keys:", receivedKeys);
-    console.error("Full received body:", JSON.stringify(body, null, 2));
-    console.error("Extracted values:", { name, toolCallId, args });
-    console.error("Args structure:", { argsKeys: Object.keys(args), args });
-    console.error("=================================");
     const missingNameResponse = NextResponse.json(
       {
         results: [
           {
             toolCallId,
-            result: `Error: Missing tool name. The tool name field is empty. Please check your VAPI assistant tool configuration:\n1. Ensure the tool function name is set correctly in VAPI dashboard\n2. Ensure the tool schema name matches your registry (e.g., "get_movers" or "get_top_movers")\n3. If testing manually, ensure the "name" field is not empty.\n\nReceived arguments: ${JSON.stringify(args)}`,
+            result:
+              "Error: Missing tool name. Please verify the tool is configured with a valid name (e.g., get_movers or get_quote) and resend the request with the name field set.",
           },
         ],
       },
-      { status: 200, headers: getCorsHeaders() }
+      { status: 400, headers: getCorsHeaders() }
     );
 
     return {
