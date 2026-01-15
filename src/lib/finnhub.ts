@@ -5,6 +5,7 @@ export { isValidTicker } from "@/lib/ticker";
 
 const FINNHUB_BASE = "https://finnhub.io/api/v1";
 const DEFAULT_UNIVERSE = ["AAPL", "MSFT", "NVDA", "AMZN", "META", "TSLA", "GOOGL", "AVGO"];
+const FETCH_TIMEOUT_MS = 8000;
 
 const invalidTickerError =
   "Ticker not recognized. Please spell it letter-by-letter (e.g., A-P-L).";
@@ -20,12 +21,18 @@ async function finnhubFetch<T>(path: string, params: Record<string, any>): Promi
       url.searchParams.set(k, String(v));
     }
   });
-  const res = await fetch(url.toString(), { cache: "no-store" });
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Finnhub ${res.status}: ${text || res.statusText}`);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  try {
+    const res = await fetch(url.toString(), { cache: "no-store", signal: controller.signal });
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`Finnhub ${res.status}: ${text || res.statusText}`);
+    }
+    return res.json() as Promise<T>;
+  } finally {
+    clearTimeout(timer);
   }
-  return res.json() as Promise<T>;
 }
 
 type ProfileCacheEntry = { name?: string; logo?: string; expiresAt: number };

@@ -1,9 +1,9 @@
 "use client";
 
 import { nanoid } from "nanoid";
-import { fetchJson } from "@/lib/fetchJson";
 import { formatQuote, formatNews, formatTodayBrief } from "@/lib/toolFormatters";
 import { Role } from "@prisma/client";
+import { useUserToken, useVapiWebhook } from "@/lib/hooks";
 
 type AddMessage = (
   role: Role,
@@ -46,15 +46,15 @@ const formatErr = (e: unknown) => {
 };
 
 export function useAgentTools(deps: AgentToolDeps) {
+  const { data: tokenData, mutate: refreshUserToken } = useUserToken({ revalidateOnFocus: false });
+  const { trigger: callWebhook } = useVapiWebhook();
+
   const callTool = async (name: string, args: ToolArgs = {}, formatResult?: (res: unknown) => string) => {
     const toolCallId = nanoid();
-    let token = deps.userToken;
+    let token = deps.userToken ?? tokenData?.userToken ?? null;
     if (!token) {
       try {
-        const tokenResp = await fetchJson<{ userToken?: string; ok?: boolean; error?: string }>(
-          "/api/vapi/user-token",
-          { credentials: "include" },
-        );
+        const tokenResp = await refreshUserToken();
         token = tokenResp?.userToken || null;
       } catch {
         token = null;
@@ -73,12 +73,7 @@ export function useAgentTools(deps: AgentToolDeps) {
     try {
       await deps.ensureConversation();
       deps.setStatus(`Calling ${name}...`);
-      const res = await fetchJson<any>("/api/vapi/webhook", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "x-from-browser": "1" },
-        credentials: "include",
-        body: JSON.stringify({ name, arguments: payloadArgs }),
-      });
+      const res = await callWebhook({ name, arguments: payloadArgs });
       const unwrapped = Array.isArray((res as any)?.results)
         ? (res as any)?.results?.[0]?.result ?? res
         : res;

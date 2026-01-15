@@ -4,7 +4,9 @@ export function getCorsHeaders() {
   return {
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, Authorization",
+    // Allow custom headers used for user tokens/dev hints; browsers need these declared.
+    "Access-Control-Allow-Headers":
+      "Content-Type, Authorization, X-Mb-User-Token, X-From-Browser, X-Allow-Demo, X-User-Id, X-Userid, X-User",
   };
 }
 

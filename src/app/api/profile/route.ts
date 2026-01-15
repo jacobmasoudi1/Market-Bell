@@ -20,7 +20,7 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     const userId = await requireUserId();
-    const body = await request.json();
+    const body = await request.json().catch(() => ({}));
     const data = sanitizeProfile(body);
     const profile = await getOrCreateProfile(userId);
     const updated = await prisma.userProfile.update({

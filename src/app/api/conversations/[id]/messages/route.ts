@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { Role } from "@prisma/client";
 import { requireUserId } from "@/lib/auth-session";
@@ -6,9 +6,9 @@ import { maybeUpdateConversationSummary } from "@/lib/summarizeConversation";
 import { corsResponse, corsOptionsResponse } from "@/lib/cors";
 import { isNoiseText, buildTitle } from "@/lib/conversationUtils";
 
-export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   try {
-    const { id } = await params;
+    const { id } = params;
     const userId = await requireUserId();
     let convo = await prisma.conversation.findFirst({
       where: { id, userId },
@@ -25,11 +25,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       });
     }
 
-    const body = await req.json();
+    const body = await req.json().catch(() => ({}));
     const role = body.role as Role;
-    const text = body.text as string;
+    const text = typeof body.text === "string" ? body.text.trim() : "";
 
-    if (!role || !text) {
+    const allowedRoles: Role[] = [Role.user, Role.assistant, Role.tool];
+    if (!allowedRoles.includes(role) || !text.trim()) {
       return corsResponse({ ok: false, error: "role and text required" }, 400);
     }
 
@@ -45,7 +46,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         data: {
           conversationId: convo.id,
           role,
-          text,
+          text: text.slice(0, 4000),
           toolName: body.toolName ?? null,
           toolCallId: body.toolCallId ?? null,
           toolArgsJson: body.toolArgsJson ?? null,

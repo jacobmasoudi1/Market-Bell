@@ -7,7 +7,13 @@ declare const global: {
 export const openai =
   global._openai ||
   new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY,
+    apiKey: (() => {
+      const key = process.env.OPENAI_API_KEY;
+      if (!key) {
+        throw new Error("Missing OPENAI_API_KEY");
+      }
+      return key;
+    })(),
   });
 
 if (process.env.NODE_ENV !== "production") {

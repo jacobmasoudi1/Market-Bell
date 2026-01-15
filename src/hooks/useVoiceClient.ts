@@ -1,9 +1,9 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { fetchJson } from "@/lib/fetchJson";
 import { Role } from "@prisma/client";
 import { VoiceClientDeps, VapiClient } from "@/types/voiceClient";
+import { useUserProfile, useUserToken } from "@/lib/hooks";
 
 const toSafeString = (val: unknown): string | null => (typeof val === "string" ? val : null);
 
@@ -17,6 +17,8 @@ export function useVoiceClient(deps: VoiceClientDeps) {
   const callStartMs = useRef<number | null>(null);
   const [lastCallDurationSec, setLastCallDurationSec] = useState<number | null>(null);
   const lastCommittedRef = useRef<string>("");
+  const { data: tokenData, mutate: refreshUserToken } = useUserToken({ revalidateOnFocus: false });
+  const { profile: profileData, mutate: refreshProfile } = useUserProfile({ revalidateOnFocus: false });
 
   const startVoiceSession = async () => {
     const publicKey =
@@ -31,23 +33,19 @@ export function useVoiceClient(deps: VoiceClientDeps) {
       let token: string | undefined;
       let userProfile: any = null;
       try {
-        const tokenResp = await fetchJson<{ userToken?: string; ok?: boolean; error?: string }>(
-          "/api/vapi/user-token",
-          { credentials: "include" },
-        );
-        token = tokenResp?.userToken;
-        if (!token) {
-          console.warn("[VoiceClient] user token missing from /api/vapi/user-token response", tokenResp);
-          setStatus("Signed-in context unavailable; using demo user.");
-        }
+        const tokenResp = await refreshUserToken();
+        token = tokenResp?.userToken ?? tokenData?.userToken ?? undefined;
       } catch (err) {
-        console.warn("[VoiceClient] user token fetch failed; continuing in demo mode", err);
-        setStatus("Signed-in context unavailable; using demo user.");
+        console.warn("[VoiceClient] user token fetch failed; aborting voice start", err);
       }
       if (token) setUserToken(token);
+      if (!token) {
+        setStatus("Sign in to start voice (missing user token).");
+        return;
+      }
 
       try {
-        const profileResp = await fetchJson<{ profile?: any }>("/api/profile", { credentials: "include" });
+        const profileResp = profileData ? { profile: profileData } : await refreshProfile();
         userProfile = profileResp?.profile ?? null;
       } catch {
         userProfile = null;

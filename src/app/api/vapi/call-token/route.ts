@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { corsResponse, corsOptionsResponse } from "@/lib/cors";
+import { requireUserId } from "@/lib/auth-session";
 
 type VapiCallResponse = {
   id: string;
@@ -7,17 +8,19 @@ type VapiCallResponse = {
 };
 
 export async function POST() {
-  const apiKey = process.env.VAPI_SECRET_KEY;
-  const assistantId = process.env.NEXT_PUBLIC_VAPI_ASSISTANT_ID;
-
-  if (!apiKey || !assistantId) {
-    return corsResponse(
-      { error: "Missing VAPI_SECRET_KEY or NEXT_PUBLIC_VAPI_ASSISTANT_ID" },
-      500
-    );
-  }
-
   try {
+    await requireUserId();
+
+    const apiKey = process.env.VAPI_SECRET_KEY;
+    const assistantId = process.env.NEXT_PUBLIC_VAPI_ASSISTANT_ID;
+
+    if (!apiKey || !assistantId) {
+      return corsResponse(
+        { error: "Missing VAPI_SECRET_KEY or NEXT_PUBLIC_VAPI_ASSISTANT_ID" },
+        500
+      );
+    }
+
     const requestBody = { assistantId };
 
     const res = await fetch("https://api.vapi.ai/call", {
@@ -47,7 +50,10 @@ export async function POST() {
     }
 
     return corsResponse({ clientUrl: data.clientUrl, callId: data.id });
-  } catch (err) {
+  } catch (err: any) {
+    if (err?.message === "Unauthorized") {
+      return corsResponse({ error: "Unauthorized" }, 401);
+    }
     console.error("Vapi token error", err);
     return corsResponse(
       { error: "Unable to create Vapi call token" },

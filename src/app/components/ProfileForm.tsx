@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { fetchJson } from "@/lib/fetchJson";
+import { useUpdateProfile, useUserProfile } from "@/lib/hooks";
 
 export type Profile = {
   riskTolerance?: string;
@@ -35,18 +35,19 @@ export function ProfileForm({ initialProfile, onSaved }: Props) {
   const [status, setStatus] = useState("");
   const [loading, setLoading] = useState(false);
   const [justSaved, setJustSaved] = useState(false);
+  const { profile: fetchedProfile, mutate: refreshProfile } = useUserProfile({ revalidateOnFocus: false });
+  const { trigger: updateProfile } = useUpdateProfile();
 
   const loadProfile = async () => {
     try {
-      const res = initialProfile ? { profile: initialProfile } : await fetchJson("/api/profile");
-      const p = res?.profile || {};
+      const sourceProfile = initialProfile ?? fetchedProfile ?? (await refreshProfile())?.profile ?? {};
       setProfile({
-        riskTolerance: p.riskTolerance ?? "medium",
-        horizon: p.horizon ?? "long",
-        sectors: p.sectors ?? "",
-        constraints: p.constraints ?? "",
-        briefStyle: p.briefStyle ?? "bullet",
-        experience: p.experience ?? "intermediate",
+        riskTolerance: sourceProfile.riskTolerance ?? "medium",
+        horizon: sourceProfile.horizon ?? "long",
+        sectors: sourceProfile.sectors ?? "",
+        constraints: sourceProfile.constraints ?? "",
+        briefStyle: sourceProfile.briefStyle ?? "bullet",
+        experience: sourceProfile.experience ?? "intermediate",
       });
     } catch (err: any) {
       console.error("Profile load failed", err);
@@ -71,12 +72,8 @@ export function ProfileForm({ initialProfile, onSaved }: Props) {
         briefStyle: profile.briefStyle || "bullet",
         experience: profile.experience || "intermediate",
       };
-      const res = await fetchJson("/api/profile", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      const p = res?.profile || payload;
+      const res = await updateProfile(payload);
+      const p = (res as any)?.profile || payload;
       setProfile({
         riskTolerance: p.riskTolerance ?? "medium",
         horizon: p.horizon ?? "long",
@@ -85,6 +82,7 @@ export function ProfileForm({ initialProfile, onSaved }: Props) {
         briefStyle: p.briefStyle ?? "bullet",
         experience: p.experience ?? "intermediate",
       });
+      await refreshProfile();
       setStatus("Saved");
       setJustSaved(true);
       onSaved?.(p);

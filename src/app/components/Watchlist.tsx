@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { fetchJson } from "@/lib/fetchJson";
 import { useWatchlistSync } from "@/hooks/useWatchlistSync";
+import { useAddWatchlistItem, useRemoveWatchlistItem, useWatchlist } from "@/lib/hooks";
 
 type Item = { id: string; ticker: string; reason?: string; createdAt?: string };
 
@@ -13,11 +13,20 @@ export function Watchlist() {
   const [status, setStatus] = useState("");
   const [loading, setLoading] = useState(false);
   const { subscribe } = useWatchlistSync();
+  const { data: watchlistData, mutate: refreshWatchlist } = useWatchlist({ revalidateOnFocus: false });
+  const { trigger: addWatchlistItem } = useAddWatchlistItem();
+  const { trigger: removeWatchlistItem } = useRemoveWatchlistItem();
+
+  useEffect(() => {
+    if (watchlistData?.items) {
+      setItems(watchlistData.items);
+    }
+  }, [watchlistData]);
 
   const load = async () => {
     try {
-      const res = await fetchJson("/api/watchlist");
-      setItems(res?.items || []);
+      const res = await refreshWatchlist();
+      setItems((res as any)?.items || watchlistData?.items || []);
     } catch (err: any) {
       console.error("Watchlist load failed", err);
       setStatus("Couldn't load watchlist. Try again.");
@@ -37,14 +46,11 @@ export function Watchlist() {
     setLoading(true);
     setStatus("");
     try {
-      await fetchJson("/api/watchlist", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ticker, reason }),
-      });
+      await addWatchlistItem({ ticker, reason });
       setTicker("");
       setReason("");
-      await load();
+      const res = await refreshWatchlist();
+      setItems((res as any)?.items || watchlistData?.items || []);
       setStatus("Added to watchlist");
     } catch (err: any) {
       console.error("Watchlist add failed", err);
@@ -58,10 +64,9 @@ export function Watchlist() {
     setLoading(true);
     setStatus("");
     try {
-      await fetchJson(`/api/watchlist?ticker=${encodeURIComponent(t)}`, {
-        method: "DELETE",
-      });
-      await load();
+      await removeWatchlistItem({ ticker: t });
+      const res = await refreshWatchlist();
+      setItems((res as any)?.items || watchlistData?.items || []);
       setStatus("Removed");
     } catch (err: any) {
       console.error("Watchlist remove failed", err);

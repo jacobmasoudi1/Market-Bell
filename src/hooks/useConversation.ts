@@ -1,8 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { fetchJson } from "@/lib/fetchJson";
 import { Role } from "@prisma/client";
+import {
+  useConversationDetail,
+  useConversations,
+  useCreateConversation,
+  usePostMessage,
+} from "@/lib/hooks";
 
 export type TranscriptEntry = { role: string; text: string; at: string };
 export type HistoryEntry = {
@@ -21,20 +26,22 @@ type AddMessageExtras = {
   ensureConversation?: boolean;
 };
 
-type ConversationMessage = { role: string; text: string; createdAt: string };
-type HistoryResponse = { conversations?: HistoryEntry[] };
-type ConversationResponse = {
-  conversation?: {
-    messages?: ConversationMessage[];
-    id?: string;
-  };
-  conversationId?: string;
-};
-
 export function useConversation() {
   const [transcript, setTranscript] = useState<TranscriptEntry[]>([]);
-  const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [conversationId, setConversationId] = useState<string | null>(null);
+
+  const {
+    data: conversationsData,
+    mutate: mutateHistory,
+  } = useConversations({ revalidateOnFocus: false, revalidateIfStale: false });
+
+  const {
+    data: conversationData,
+    mutate: mutateConversation,
+  } = useConversationDetail(conversationId, { revalidateOnFocus: false });
+
+  const { trigger: createConversation } = useCreateConversation();
+  const { trigger: postMessage } = usePostMessage(conversationId);
 
   const normalizeHistoryEntry = (entry: any): HistoryEntry => ({
     id: typeof entry?.id === "string" ? entry.id : String(entry?.id ?? ""),
@@ -48,11 +55,21 @@ export function useConversation() {
     const savedConversation = localStorage.getItem("conversationId");
     if (savedConversation) {
       setConversationId(savedConversation);
-      loadConversation(savedConversation);
-    } else {
-      loadHistory();
     }
   }, []);
+
+  useEffect(() => {
+    const messages = conversationData?.conversation?.messages || [];
+    if (messages.length) {
+      setTranscript(
+        messages.map((m: any) => ({
+          role: m.role,
+          text: m.text,
+          at: m.createdAt,
+        })),
+      );
+    }
+  }, [conversationData]);
 
   const addMessage = async (role: Role, text?: string, extras?: AddMessageExtras) => {
     if (!text) return;
@@ -64,26 +81,23 @@ export function useConversation() {
     }
     if (targetConversationId) {
       try {
-        const result = await fetchJson<ConversationResponse>(`/api/conversations/${targetConversationId}/messages`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            role,
-            text,
-            toolName: extras?.toolName,
-            toolCallId: extras?.toolCallId,
-            toolArgsJson: extras?.toolArgsJson,
-            toolResultJson: extras?.toolResultJson,
-          }),
+        const result = await postMessage({
+          role,
+          text,
+          toolName: extras?.toolName,
+          toolCallId: extras?.toolCallId,
+          toolArgsJson: extras?.toolArgsJson,
+          toolResultJson: extras?.toolResultJson,
         });
-        const persistedId = result?.conversationId;
+        const persistedId = (result as any)?.conversationId;
         if (persistedId && persistedId !== targetConversationId) {
           setConversationId(persistedId);
           localStorage.setItem("conversationId", persistedId);
         }
         if (role === Role.assistant) {
-          await loadHistory();
+          await mutateHistory();
         }
+        await mutateConversation();
       } catch (err: unknown) {
         console.error("Failed to persist message", err);
       }
@@ -91,29 +105,15 @@ export function useConversation() {
   };
 
   const loadHistory = async () => {
-    try {
-      const data = await fetchJson<HistoryResponse>("/api/conversations");
-      const items = (data?.conversations || []).map(normalizeHistoryEntry);
-      setHistory(items);
-    } catch (error: unknown) {
-      console.error("Could not load history", error);
-    }
+    await mutateHistory();
   };
 
   const loadConversation = async (id: string) => {
     try {
-      const data = await fetchJson<ConversationResponse>(`/api/conversations/${id}`);
-      const messages = data?.conversation?.messages || [];
-      setTranscript(
-        messages.map((m) => ({
-          role: m.role,
-          text: m.text,
-          at: m.createdAt,
-        })),
-      );
       setConversationId(id);
       localStorage.setItem("conversationId", id);
-      await loadHistory();
+      await mutateConversation();
+      await mutateHistory();
     } catch (error: unknown) {
       console.error("Could not load conversation", error);
     }
@@ -121,16 +121,12 @@ export function useConversation() {
 
   const ensureConversation = async () => {
     if (conversationId) return conversationId;
-    const res = await fetchJson<ConversationResponse>("/api/conversations", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({}),
-    });
-    const id = res?.conversation?.id;
+    const res = await createConversation();
+    const id = (res as any)?.conversation?.id;
     if (id) {
       setConversationId(id);
       localStorage.setItem("conversationId", id);
-      await loadHistory();
+      await mutateHistory();
       return id;
     }
     throw new Error("Unable to create conversation");
@@ -141,14 +137,14 @@ export function useConversation() {
     localStorage.removeItem("conversationId");
     setConversationId(null);
     await ensureConversation();
-    await loadHistory();
+    await mutateHistory();
   };
 
   const selectConversation = async (id: string) => loadConversation(id);
 
   return {
     transcript,
-    history,
+    history: (conversationsData?.conversations || []).map(normalizeHistoryEntry),
     conversationId,
     addMessage,
     ensureConversation,

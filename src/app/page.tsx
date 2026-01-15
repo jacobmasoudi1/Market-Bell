@@ -11,9 +11,9 @@ import { useVoiceClient } from "@/hooks/useVoiceClient";
 import { useWatchlistSync } from "@/hooks/useWatchlistSync";
 import { ProfileForm, Profile } from "./components/ProfileForm";
 import { ProfileSummary } from "./components/ProfileSummary";
-import { fetchJson } from "@/lib/fetchJson";
 import { Watchlist } from "./components/Watchlist";
 import { ToolShortcuts } from "./components/ToolShortcuts";
+import { useUserProfile } from "@/lib/hooks";
 
 export default function Home() {
   const {
@@ -71,34 +71,41 @@ export default function Home() {
     currentConversation?.title ||
     (conversationId ? `Conversation ${conversationId.slice(0, 6)}` : "New conversation");
 
+  const {
+    profile: swrProfile,
+    error: profileError,
+    mutate: mutateProfile,
+  } = useUserProfile({
+    revalidateOnFocus: false,
+    revalidateIfStale: false,
+  });
+
   useEffect(() => {
-    const loadProfile = async () => {
-      if (!signedIn) {
-        setProfile(null);
-        setShowProfileForm(false);
-        setAuthError(false);
-        return;
+    if (!signedIn) {
+      setProfile(null);
+      setShowProfileForm(false);
+      setAuthError(false);
+      return;
+    }
+    if (profileError) {
+      if ((profileError as any)?.status === 401 || (profileError as any)?.message?.includes?.("401")) {
+        setAuthError(true);
       }
-      try {
-        const res = await fetchJson("/api/profile");
-        setProfile(res?.profile || null);
-        if (!res?.profile?.riskTolerance || !res?.profile?.horizon) {
-          setShowProfileForm(true);
-        }
-      } catch (err) {
-        console.error("Profile load failed", err);
-        if ((err as any)?.message?.includes("401") || (err as any)?.message?.includes("Unauthorized")) {
-          setAuthError(true);
-        }
+      setShowProfileForm(true);
+      return;
+    }
+    if (swrProfile) {
+      setProfile(swrProfile);
+      if (!swrProfile?.riskTolerance || !swrProfile?.horizon) {
         setShowProfileForm(true);
       }
-    };
-    loadProfile();
-  }, [signedIn]);
+    }
+  }, [signedIn, swrProfile, profileError]);
 
   const handleProfileSaved = (p: Profile) => {
     setProfile(p);
     setShowProfileForm(false);
+    void mutateProfile();
   };
 
   const handleToggleVoice = () => {

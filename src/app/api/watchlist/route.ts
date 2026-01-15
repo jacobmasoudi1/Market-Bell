@@ -18,7 +18,7 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    const body = await request.json();
+    const body = await request.json().catch(() => ({}));
     const userId = await requireUserId();
     const item = await addWatchlistItem(userId, body.ticker, body.reason);
     return corsResponse({ ok: true, item });
@@ -26,7 +26,8 @@ export async function POST(request: Request) {
     if (err?.message === "Unauthorized") {
       return corsResponse({ ok: false, error: "Unauthorized" }, 401);
     }
-    return corsResponse({ ok: false, error: err.message }, 500);
+    const status = err?.message?.toLowerCase?.().includes("ticker") ? 400 : 500;
+    return corsResponse({ ok: false, error: err.message }, status);
   }
 }
 
@@ -35,13 +36,17 @@ export async function DELETE(req: NextRequest) {
     const { searchParams } = new URL(req.url);
     const ticker = searchParams.get("ticker") ?? "";
     const userId = await requireUserId();
+    if (!ticker) {
+      return corsResponse({ ok: false, error: "ticker required" }, 400);
+    }
     const removed = await removeWatchlistItem(userId, ticker);
     return corsResponse({ ok: true, removed });
   } catch (err: any) {
     if (err?.message === "Unauthorized") {
       return corsResponse({ ok: false, error: "Unauthorized" }, 401);
     }
-    return corsResponse({ ok: false, error: err.message }, 500);
+    const status = err?.message?.toLowerCase?.().includes("ticker") ? 400 : 500;
+    return corsResponse({ ok: false, error: err.message }, status);
   }
 }
 
