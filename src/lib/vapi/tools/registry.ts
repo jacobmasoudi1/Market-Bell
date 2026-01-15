@@ -19,7 +19,7 @@ const coerceTicker = (raw?: string | null) => {
 
 async function getTodayBrief(args: ToolArgs, userId: string): Promise<ToolResponse<TodayBrief>> {
   const limit = Math.min(Math.max(Number(args.limit ?? 3), 1), 10);
-  const briefData = await buildBriefData(userId, { newsLimit: limit, moversLimit: 6 });
+  const briefData = await buildBriefData(userId, { newsLimit: limit, moversLimit: 5 });
 
   const summary = formatBrief(briefData.profile, {
     topGainers: briefData.topGainers,
@@ -53,7 +53,7 @@ const moversHandler: ToolHandler = async (args) => {
   });
 };
 
-export const TOOL_REGISTRY: Record<CanonicalToolName, ToolHandler> = {
+const TOOL_REGISTRY: Record<CanonicalToolName, ToolHandler> = {
   get_quote: async (args, ctx) => {
     const ticker = coerceTicker(args.ticker);
     const validation = validateTickerForTool(ticker, {
@@ -132,7 +132,6 @@ export const TOOL_REGISTRY: Record<CanonicalToolName, ToolHandler> = {
       }
       return { ok: true, data: { added: validation.ticker, speech: `Added ${validation.ticker} to your watchlist.` } };
     } catch (err: any) {
-      console.error("[Webhook][add_to_watchlist] watchlist write failed", err);
       return { ok: false, error: "Unable to add to watchlist right now." };
     }
   },
@@ -199,9 +198,9 @@ export const TOOL_REGISTRY: Record<CanonicalToolName, ToolHandler> = {
   },
 };
 
-export const TOOL_ALIASES: Partial<Record<ToolName, ToolName>> = {
+const TOOL_ALIASES: Partial<Record<ToolName, ToolName>> = {
   get_top_movers: "get_movers",
 };
 
 export type { ToolContext, ToolHandler, CanonicalToolName };
-export { coerceTicker };
+export { coerceTicker, TOOL_REGISTRY, TOOL_ALIASES };

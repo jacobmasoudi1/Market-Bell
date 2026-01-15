@@ -17,7 +17,6 @@ export type VapiContext = {
   source?: string;
   fromBrowser: boolean;
   tokenSource?: string;
-  resolvedTokenSource?: string;
   userText: string;
   error?: string;
   userToken?: string;
@@ -130,8 +129,7 @@ export async function buildVapiContext(req: NextRequest, body: any): Promise<Vap
     userId,
     source,
     fromBrowser,
-    tokenSource,
-    resolvedTokenSource,
+    tokenSource: resolvedTokenSource ?? tokenSource,
     userText,
     error,
     userToken,

@@ -1,6 +1,5 @@
 import { clearPendingConfirmation, getPendingConfirmation, isAffirmativeResponse } from "@/lib/pendingConfirmations";
 import { TOOL_REGISTRY } from "@/lib/vapi/tools/registry";
-import type { CanonicalToolName } from "@/lib/vapi/tools/registry";
 import { ToolArgs } from "@/lib/vapi/toolTypes";
 import { ToolResponse } from "@/lib/types";
 
@@ -18,7 +17,7 @@ export async function maybeRunPendingConfirmation(ctx: ConfirmationContext): Pro
     return null;
   }
 
-  const tickerTools: CanonicalToolName[] = ["get_quote", "get_news", "add_to_watchlist", "remove_from_watchlist"];
+  const tickerTools = ["get_quote", "get_news", "add_to_watchlist", "remove_from_watchlist"] as const;
   for (const toolName of tickerTools) {
     const pending = getPendingConfirmation(ctx.conversationId, toolName);
     if (pending && pending.userId === ctx.userId) {
@@ -36,7 +35,6 @@ export async function maybeRunPendingConfirmation(ctx: ConfirmationContext): Pro
         });
         return result;
       } catch (err: unknown) {
-        console.error("[Webhook] pending confirmation execution error", err);
         return {
           ok: false,
           error: err instanceof Error ? err.message : "Tool error",

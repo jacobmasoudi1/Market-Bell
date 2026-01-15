@@ -6,6 +6,8 @@ import { ToolName } from "@/lib/vapi/toolTypes";
 import { TOOL_REGISTRY } from "@/lib/vapi/tools/registry";
 import { wrapVapiResponse } from "@/lib/vapi/respond";
 
+const WEBHOOK_SECRET = process.env.VAPI_WEBHOOK_SECRET;
+
 export async function OPTIONS() {
   return corsOptionsResponse();
 }
@@ -15,6 +17,20 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
+  if (WEBHOOK_SECRET) {
+    const secretHeader = req.headers.get("x-webhook-secret");
+    if (!secretHeader || secretHeader !== WEBHOOK_SECRET) {
+      return NextResponse.json(
+        {
+          results: [
+            { toolCallId: "unknown", result: "Invalid webhook secret" },
+          ],
+        },
+        { status: 401, headers: getCorsHeaders() }
+      );
+    }
+  }
+
   const contentType = req.headers.get("content-type") || "";
   if (!contentType.includes("application/json")) {
     return NextResponse.json(
@@ -39,12 +55,6 @@ export async function POST(req: NextRequest) {
 
   if (!ctx.userId || ctx.error) {
     const errMsg = ctx.error || "Unauthorized";
-    console.error("[Webhook] user resolution failed", {
-      error: errMsg,
-      fromBrowser: ctx.fromBrowser,
-      hasToken: Boolean(ctx.userToken),
-      tokenSource: ctx.tokenSource,
-    });
     return wrapVapiResponse(ctx.toolCallId, { ok: false, error: errMsg });
   }
 
@@ -63,7 +73,6 @@ export async function POST(req: NextRequest) {
   const handler = TOOL_REGISTRY[ctx.resolvedName as keyof typeof TOOL_REGISTRY];
 
   if (!handler) {
-    console.error("Webhook unknown tool", ctx.resolvedName, body);
     return NextResponse.json(
       {
         results: [
@@ -86,7 +95,6 @@ export async function POST(req: NextRequest) {
     });
     return wrapVapiResponse(ctx.toolCallId, result);
   } catch (err: unknown) {
-    console.error("[Webhook] tool handler error", err);
     return wrapVapiResponse(ctx.toolCallId, {
       ok: false,
       error: err instanceof Error ? err.message : "Tool error",
