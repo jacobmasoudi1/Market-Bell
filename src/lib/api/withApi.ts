@@ -2,7 +2,6 @@ import { NextRequest } from "next/server";
 import { corsResponse } from "@/lib/cors";
 import { requireUserId } from "@/lib/auth-session";
 import { rateLimitHeaders, rateLimitRequest } from "@/lib/rateLimit";
-
 type HandlerCtx = { userId?: string };
 type NextRouteContext = { params?: any };
 type Handler = (req: NextRequest, ctx: HandlerCtx, context: NextRouteContext) => Promise<Record<string, unknown>>;
