@@ -1,40 +1,30 @@
-import { NextResponse } from "next/server";
-import { requireUserId } from "@/lib/auth-session";
 import { getOrCreateProfile, sanitizeProfile } from "@/lib/profile";
 import { prisma } from "@/lib/prisma";
-import { corsResponse, corsOptionsResponse } from "@/lib/cors";
+import { corsOptionsResponse } from "@/lib/cors";
+import { safeJson } from "@/lib/validate";
+import { withApi } from "@/lib/api/withApi";
 
-export async function GET() {
-  try {
-    const userId = await requireUserId();
-    const profile = await getOrCreateProfile(userId);
-    return corsResponse({ ok: true, profile });
-  } catch (err: any) {
-    if (err?.message === "Unauthorized") {
-      return corsResponse({ ok: false, error: "Unauthorized" }, 401);
-    }
-    return corsResponse({ ok: false, error: err.message }, 500);
-  }
-}
+export const GET = withApi(
+  async (_req, { userId }, _context) => {
+    const profile = await getOrCreateProfile(userId as string);
+    return { profile };
+  },
+  { auth: true },
+);
 
-export async function POST(request: Request) {
-  try {
-    const userId = await requireUserId();
-    const body = await request.json().catch(() => ({}));
+export const POST = withApi(
+  async (request, { userId }, _context) => {
+    const body = safeJson(await request.json().catch(() => ({})));
     const data = sanitizeProfile(body);
-    const profile = await getOrCreateProfile(userId);
+    await getOrCreateProfile(userId as string);
     const updated = await prisma.userProfile.update({
-      where: { userId },
+      where: { userId: userId as string },
       data,
     });
-    return corsResponse({ ok: true, profile: updated });
-  } catch (err: any) {
-    if (err?.message === "Unauthorized") {
-      return corsResponse({ ok: false, error: "Unauthorized" }, 401);
-    }
-    return corsResponse({ ok: false, error: err.message }, 500);
-  }
-}
+    return { profile: updated };
+  },
+  { auth: true, rateLimit: { key: "profile-write", limit: 20, windowMs: 60_000 } },
+);
 
 export async function OPTIONS() {
   return corsOptionsResponse();

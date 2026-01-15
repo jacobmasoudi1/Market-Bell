@@ -1,54 +1,40 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { listWatchlist, addWatchlistItem, removeWatchlistItem } from "@/lib/watchlist";
-import { requireUserId } from "@/lib/auth-session";
-import { corsResponse, corsOptionsResponse } from "@/lib/cors";
+import { corsOptionsResponse } from "@/lib/cors";
+import { safeJson, optionalString, requireString } from "@/lib/validate";
+import { withApi } from "@/lib/api/withApi";
 
-export async function GET() {
-  try {
-    const userId = await requireUserId();
+export const GET = withApi(
+  async (_req, { userId }, _context) => {
     const items = await listWatchlist(userId);
-    return corsResponse({ ok: true, items });
-  } catch (err: any) {
-    if (err?.message === "Unauthorized") {
-      return corsResponse({ ok: false, error: "Unauthorized" }, 401);
-    }
-    return corsResponse({ ok: false, error: err.message }, 500);
-  }
-}
+    return { items };
+  },
+  { auth: true },
+);
 
-export async function POST(request: Request) {
-  try {
-    const body = await request.json().catch(() => ({}));
-    const userId = await requireUserId();
-    const item = await addWatchlistItem(userId, body.ticker, body.reason);
-    return corsResponse({ ok: true, item });
-  } catch (err: any) {
-    if (err?.message === "Unauthorized") {
-      return corsResponse({ ok: false, error: "Unauthorized" }, 401);
-    }
-    const status = err?.message?.toLowerCase?.().includes("ticker") ? 400 : 500;
-    return corsResponse({ ok: false, error: err.message }, status);
-  }
-}
+export const POST = withApi(
+  async (request, { userId }, _context) => {
+    const body = safeJson(await request.json().catch(() => ({})));
+    const ticker = requireString(body.ticker, "ticker", { maxLength: 8 }).toUpperCase();
+    const reason = optionalString(body.reason, { maxLength: 280 });
+    const item = await addWatchlistItem(userId as string, ticker, reason);
+    return { item };
+  },
+  { auth: true, rateLimit: { key: "watchlist-write", limit: 30, windowMs: 60_000 } },
+);
 
-export async function DELETE(req: NextRequest) {
-  try {
+export const DELETE = withApi(
+  async (req: NextRequest, { userId }, _context) => {
     const { searchParams } = new URL(req.url);
     const ticker = searchParams.get("ticker") ?? "";
-    const userId = await requireUserId();
     if (!ticker) {
-      return corsResponse({ ok: false, error: "ticker required" }, 400);
+      return { ok: false, error: "ticker required", status: 400 };
     }
-    const removed = await removeWatchlistItem(userId, ticker);
-    return corsResponse({ ok: true, removed });
-  } catch (err: any) {
-    if (err?.message === "Unauthorized") {
-      return corsResponse({ ok: false, error: "Unauthorized" }, 401);
-    }
-    const status = err?.message?.toLowerCase?.().includes("ticker") ? 400 : 500;
-    return corsResponse({ ok: false, error: err.message }, status);
-  }
-}
+    const removed = await removeWatchlistItem(userId as string, ticker);
+    return { removed };
+  },
+  { auth: true, rateLimit: { key: "watchlist-write", limit: 30, windowMs: 60_000 } },
+);
 
 export async function OPTIONS() {
   return corsOptionsResponse();

@@ -79,6 +79,19 @@ model WatchlistItem {
   @@index([userId, createdAt])
 }
 
+model PendingConfirmation {
+  id             String   @id @default(cuid())
+  conversationId String
+  toolName       String
+  ticker         String
+  args           Json
+  userId         String
+  expiresAt      DateTime
+
+  @@index([conversationId, toolName, ticker])
+  @@unique([conversationId, toolName, ticker], name: "conversationId_toolName_ticker")
+}
+
 enum Role {
   user
   assistant

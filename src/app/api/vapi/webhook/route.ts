@@ -1,92 +1,109 @@
-import { NextRequest, NextResponse } from "next/server";
-import { getCorsHeaders, corsOptionsResponse } from "@/lib/cors";
+import { NextRequest } from "next/server";
+import { corsOptionsResponse } from "@/lib/cors";
 import { maybeRunPendingConfirmation } from "@/lib/vapi/confirmations";
 import { buildVapiContext } from "@/lib/vapi/context";
-import { ToolName } from "@/lib/vapi/toolTypes";
 import { TOOL_REGISTRY } from "@/lib/vapi/tools/registry";
-import { wrapVapiResponse } from "@/lib/vapi/respond";
+import { formatResult } from "@/lib/vapi/respond";
+import { withApi } from "@/lib/api/withApi";
 
 export async function OPTIONS() {
   return corsOptionsResponse();
 }
 
-export async function GET() {
-  return NextResponse.json({ ok: true, message: "webhook alive" }, { status: 200, headers: getCorsHeaders() });
-}
+export const GET = withApi(async () => ({ message: "webhook alive" }));
 
-export async function POST(req: NextRequest) {
-  const contentType = req.headers.get("content-type") || "";
-  if (!contentType.includes("application/json")) {
-    return NextResponse.json(
-      {
+export const POST = withApi(
+  async (req: NextRequest, _ctx, context) => {
+    const contentType = req.headers.get("content-type") || "";
+    if (!contentType.includes("application/json")) {
+      return {
         results: [
           {
             toolCallId: "unknown",
             result: "Invalid content-type. Expect application/json.",
           },
         ],
-      },
-      { status: 200, headers: getCorsHeaders() }
-    );
-  }
+        status: 400,
+      };
+    }
 
-  const body = await req.json().catch(() => ({}));
-  const ctx = await buildVapiContext(req, body);
+    const body = await req.json().catch(() => ({}));
+    const ctx = await buildVapiContext(req, body);
 
-  if (ctx.missingNameResponse) {
-    return ctx.missingNameResponse;
-  }
+    if (ctx.missingNameResponse) {
+      return {
+        results: [
+          {
+            toolCallId: ctx.toolCallId,
+            result:
+              "Error: Missing tool name. Please verify the tool is configured with a valid name (e.g., get_movers or get_quote) and resend the request with the name field set.",
+          },
+        ],
+        status: 400,
+      };
+    }
 
-  if (!ctx.userId || ctx.error) {
-    const errMsg = ctx.error || "Unauthorized";
-    return wrapVapiResponse(ctx.toolCallId, { ok: false, error: errMsg });
-  }
+    if (!ctx.userId || ctx.error) {
+      const errMsg = ctx.error || "Unauthorized";
+      const status = errMsg === "Unauthorized" ? 401 : 400;
+      return {
+        results: [
+          {
+            toolCallId: ctx.toolCallId,
+            result: errMsg,
+          },
+        ],
+        status,
+      };
+    }
 
-  const confirmationResult = await maybeRunPendingConfirmation({
-    conversationId: ctx.conversationId,
-    args: ctx.args,
-    userText: ctx.userText,
-    userId: ctx.userId,
-    source: ctx.source,
-    toolCallId: ctx.toolCallId,
-  });
-  if (confirmationResult) {
-    return wrapVapiResponse(ctx.toolCallId, confirmationResult);
-  }
+    const confirmationResult = await maybeRunPendingConfirmation({
+      conversationId: ctx.conversationId,
+      args: ctx.args,
+      userText: ctx.userText,
+      userId: ctx.userId,
+      source: ctx.source,
+      toolCallId: ctx.toolCallId,
+    });
+    if (confirmationResult) {
+      return {
+        results: [
+          {
+            toolCallId: ctx.toolCallId,
+            result: formatResult(confirmationResult),
+          },
+        ],
+      };
+    }
 
-  const handler = TOOL_REGISTRY[ctx.resolvedName as keyof typeof TOOL_REGISTRY];
+    const handler = TOOL_REGISTRY[ctx.resolvedName as keyof typeof TOOL_REGISTRY];
 
-  if (!handler) {
-    return NextResponse.json(
-      {
+    if (!handler) {
+      return {
         results: [
           {
             toolCallId: ctx.toolCallId,
             result: `Unknown tool: ${ctx.resolvedName}`,
           },
         ],
-      },
-      { status: 400, headers: getCorsHeaders() }
-    );
-  }
+        status: 400,
+      };
+    }
 
-  try {
     const result = await handler(ctx.args, {
       userId: ctx.userId,
       source: ctx.source || "unknown",
       toolCallId: ctx.toolCallId,
       conversationId: ctx.conversationId,
     });
-    return wrapVapiResponse(ctx.toolCallId, result);
-  } catch (err: unknown) {
-    console.error("[Webhook] tool handler error", {
-      toolCallId: ctx.toolCallId,
-      resolvedName: ctx.resolvedName,
-      error: err instanceof Error ? err.message : String(err),
-    });
-    return wrapVapiResponse(ctx.toolCallId, {
-      ok: false,
-      error: err instanceof Error ? err.message : "Tool error",
-    });
-  }
-}
+    return {
+      results: [
+        {
+          toolCallId: ctx.toolCallId,
+          result: formatResult(result),
+        },
+      ],
+    };
+  },
+  { rateLimit: { key: "vapi-webhook", limit: 120, windowMs: 60_000 }, raw: true },
+);

@@ -1,13 +1,12 @@
-import { NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireUserId } from "@/lib/auth-session";
-import { corsResponse, corsOptionsResponse } from "@/lib/cors";
+import { corsOptionsResponse } from "@/lib/cors";
+import { withApi } from "@/lib/api/withApi";
 
-export async function GET() {
-  try {
-    const userId = await requireUserId();
+export const GET = withApi(
+  async (_req: NextRequest, { userId }, _context) => {
     const conversations = await prisma.conversation.findMany({
-      where: { userId },
+      where: { userId: userId as string },
       orderBy: [{ lastMessageAt: "desc" }, { createdAt: "desc" }],
       select: {
         id: true,
@@ -17,37 +16,28 @@ export async function GET() {
         lastMessageAt: true,
       },
     });
-    return corsResponse({ ok: true, conversations });
-  } catch (err: any) {
-    if (err?.message === "Unauthorized") {
-      return corsResponse({ ok: false, error: "Unauthorized" }, 401);
-    }
-    return corsResponse({ ok: false, error: err.message }, 500);
-  }
-}
+    return { conversations };
+  },
+  { auth: true },
+);
 
 export async function OPTIONS() {
   return corsOptionsResponse();
 }
 
-export async function POST(request: Request) {
-  try {
-    const userId = await requireUserId();
+export const POST = withApi(
+  async (request: NextRequest, { userId }, _context) => {
     const body = await request.json().catch(() => ({}));
     const convo = await prisma.conversation.create({
       data: {
-        userId,
+        userId: userId as string,
         title: body.title ?? null,
         summary: body.summary ?? null,
         lastMessageAt: new Date(),
       },
       select: { id: true, title: true, summary: true, createdAt: true, lastMessageAt: true },
     });
-    return corsResponse({ ok: true, conversation: convo });
-  } catch (err: any) {
-    if (err?.message === "Unauthorized") {
-      return corsResponse({ ok: false, error: "Unauthorized" }, 401);
-    }
-    return corsResponse({ ok: false, error: err.message }, 500);
-  }
-}
+    return { conversation: convo };
+  },
+  { auth: true },
+);

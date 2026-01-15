@@ -1,8 +1,9 @@
-import { NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { Role } from "@prisma/client";
-import { corsResponse, corsOptionsResponse } from "@/lib/cors";
-import { requireUserId } from "@/lib/auth-session";
+import { corsOptionsResponse } from "@/lib/cors";
+import { safeJson, optionalString } from "@/lib/validate";
+import { withApi } from "@/lib/api/withApi";
 
 type TranscriptEntry = { role?: string; text?: string; at?: string };
 
@@ -10,10 +11,9 @@ const ALLOWED_ROLES: Role[] = [Role.user, Role.assistant, Role.tool];
 const MAX_MESSAGES = 200;
 const MAX_TEXT_LENGTH = 4000;
 
-export async function POST(req: Request) {
-  try {
-    const userId = await requireUserId();
-    const body = await req.json().catch(() => ({}));
+export const POST = withApi(
+  async (request: NextRequest, { userId }, _context) => {
+    const body = safeJson(await request.json().catch(() => ({})));
 
     const rawTranscript = Array.isArray(body.transcript) ? body.transcript.slice(0, MAX_MESSAGES) : [];
     const transcript: TranscriptEntry[] = rawTranscript.map((m: TranscriptEntry) => ({
@@ -24,14 +24,14 @@ export async function POST(req: Request) {
 
     const invalidEntry = transcript.find((m) => !m.text);
     if (invalidEntry) {
-      return corsResponse({ ok: false, error: "Transcript entries must include text." }, 400);
+      return { ok: false, error: "Transcript entries must include text.", status: 400 };
     }
 
     const conversation = await prisma.conversation.create({
       data: {
-        userId,
-        title: typeof body.title === "string" ? body.title : null,
-        summary: typeof body.summary === "string" ? body.summary : null,
+        userId: userId as string,
+        title: optionalString(body.title, { maxLength: 200 }) ?? null,
+        summary: optionalString(body.summary, { maxLength: 4000 }) ?? null,
         lastMessageAt: new Date(),
       },
     });
@@ -46,14 +46,10 @@ export async function POST(req: Request) {
       await prisma.message.createMany({ data });
     }
 
-    return corsResponse({ ok: true, conversationId: conversation.id });
-  } catch (err: any) {
-    if (err?.message === "Unauthorized") {
-      return corsResponse({ ok: false, error: "Unauthorized" }, 401);
-    }
-    return corsResponse({ ok: false, error: err.message || "Unable to save conversation" }, 500);
-  }
-}
+    return { conversationId: conversation.id };
+  },
+  { auth: true, rateLimit: { key: "save-conversation", limit: 20, windowMs: 60_000 } },
+);
 
 export async function OPTIONS() {
   return corsOptionsResponse();

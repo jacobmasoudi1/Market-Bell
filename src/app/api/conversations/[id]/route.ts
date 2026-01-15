@@ -1,14 +1,14 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireUserId } from "@/lib/auth-session";
-import { corsResponse, corsOptionsResponse } from "@/lib/cors";
+import { corsOptionsResponse } from "@/lib/cors";
+import { withApi } from "@/lib/api/withApi";
 
-export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
-  try {
+export const GET = withApi(
+  async (_req: NextRequest, { userId }, context) => {
+    const params = await Promise.resolve(context.params);
     const { id } = params;
-    const userId = await requireUserId();
     const convo = await prisma.conversation.findFirst({
-      where: { id, userId },
+      where: { id, userId: userId as string },
       include: {
         messages: {
           orderBy: { createdAt: "asc" },
@@ -16,16 +16,12 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
       },
     });
     if (!convo) {
-      return corsResponse({ ok: false, error: "Conversation not found" }, 404);
+      return { ok: false, error: "Conversation not found", status: 404 };
     }
-    return corsResponse({ ok: true, conversation: convo });
-  } catch (err: any) {
-    if (err?.message === "Unauthorized") {
-      return corsResponse({ ok: false, error: "Unauthorized" }, 401);
-    }
-    return corsResponse({ ok: false, error: err.message }, 500);
-  }
-}
+    return { conversation: convo };
+  },
+  { auth: true },
+);
 
 export async function OPTIONS() {
   return corsOptionsResponse();

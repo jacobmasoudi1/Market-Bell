@@ -1,31 +1,24 @@
-import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireUserId } from "@/lib/auth-session";
 import { getOrCreateProfile } from "@/lib/profile";
-import { corsResponse, corsOptionsResponse } from "@/lib/cors";
+import { corsOptionsResponse } from "@/lib/cors";
+import { withApi } from "@/lib/api/withApi";
 
-export async function GET() {
-  try {
-    const userId = await requireUserId();
-    const finalProfile = await getOrCreateProfile(userId);
+export const GET = withApi(
+  async (_req, { userId }, _context) => {
+    const finalProfile = await getOrCreateProfile(userId as string);
 
     const conversations = await prisma.conversation.findMany({
-      where: { userId },
+      where: { userId: userId as string },
       orderBy: [{ lastMessageAt: "desc" }, { createdAt: "desc" }],
       select: { id: true, title: true, summary: true, createdAt: true },
     });
-    return corsResponse({
-      ok: true,
+    return {
       profile: finalProfile,
       conversationHistory: conversations,
-    });
-  } catch (err: any) {
-    if (err?.message === "Unauthorized") {
-      return corsResponse({ ok: false, error: "Unauthorized" }, 401);
-    }
-    return corsResponse({ ok: false, error: err.message }, 500);
-  }
-}
+    };
+  },
+  { auth: true },
+);
 
 export async function OPTIONS() {
   return corsOptionsResponse();

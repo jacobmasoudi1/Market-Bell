@@ -19,14 +19,15 @@ export async function maybeRunPendingConfirmation(ctx: ConfirmationContext): Pro
 
   const tickerTools = ["get_quote", "get_news", "add_to_watchlist", "remove_from_watchlist"] as const;
   for (const toolName of tickerTools) {
-    const pending = getPendingConfirmation(ctx.conversationId, toolName);
+    const pending = await getPendingConfirmation(ctx.conversationId, toolName);
     if (pending && pending.userId === ctx.userId) {
-      clearPendingConfirmation(ctx.conversationId, toolName, pending.ticker);
+      await clearPendingConfirmation(ctx.conversationId, toolName, pending.ticker);
       const handler = TOOL_REGISTRY[toolName];
       if (!handler) continue;
 
       try {
-        const confirmedArgs = { ...pending.args, confirm: true, ticker: pending.ticker };
+        const baseArgs = typeof pending.args === "object" && pending.args !== null ? pending.args : {};
+        const confirmedArgs = { ...(baseArgs as Record<string, unknown>), confirm: true, ticker: pending.ticker };
         const result = await handler(confirmedArgs, {
           userId: ctx.userId as string,
           source: ctx.source || "unknown",

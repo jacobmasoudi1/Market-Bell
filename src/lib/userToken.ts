@@ -19,9 +19,12 @@ function getSecret() {
   return secret;
 }
 
+const ISSUER = process.env.VAPI_USER_TOKEN_ISSUER || "market-bell";
+const AUDIENCE = process.env.VAPI_USER_TOKEN_AUDIENCE || "market-bell";
+
 export function signUserToken(userId: string, ttlSeconds = 3600) {
   const now = Math.floor(Date.now() / 1000);
-  const payload = { userId, exp: now + ttlSeconds, iat: now };
+  const payload = { userId, exp: now + ttlSeconds, iat: now, iss: ISSUER, aud: AUDIENCE, jti: crypto.randomUUID() };
   const header = { alg: "HS256", typ: "JWT" };
 
   const headerB64 = base64UrlEncode(JSON.stringify(header));
@@ -48,6 +51,8 @@ export function verifyUserToken(token?: string): { userId: string } | null {
     const now = Math.floor(Date.now() / 1000);
     if (typeof payload?.exp !== "number" || typeof payload?.userId !== "string") return null;
     if (payload.exp < now) return null;
+    if (payload.iss && payload.iss !== ISSUER) return null;
+    if (payload.aud && payload.aud !== AUDIENCE) return null;
     return { userId: payload.userId };
   } catch {
     return null;

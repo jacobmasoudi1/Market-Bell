@@ -1,37 +1,44 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { Role } from "@prisma/client";
-import { requireUserId } from "@/lib/auth-session";
 import { maybeUpdateConversationSummary } from "@/lib/summarizeConversation";
-import { corsResponse, corsOptionsResponse } from "@/lib/cors";
+import { corsOptionsResponse } from "@/lib/cors";
 import { isNoiseText, buildTitle } from "@/lib/conversationUtils";
+import { safeJson, requireString } from "@/lib/validate";
+import { withApi } from "@/lib/api/withApi";
+import { Prisma } from "@prisma/client";
 
-export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
-  try {
-    const { id } = params;
-    const userId = await requireUserId();
+export const POST = withApi(
+  async (request: NextRequest, { userId }, context) => {
+    const params = await Promise.resolve(context.params);
+    const id = params?.id as string;
+
     let convo = await prisma.conversation.findFirst({
-      where: { id, userId },
+      where: { id, userId: userId as string },
       select: { id: true, title: true },
     });
-    
+
     if (!convo) {
       convo = await prisma.conversation.create({
         data: {
-          userId,
+          userId: userId as string,
           lastMessageAt: new Date(),
         },
         select: { id: true, title: true },
       });
     }
 
-    const body = await req.json().catch(() => ({}));
+    const body = safeJson(await request.json().catch(() => ({})));
     const role = body.role as Role;
-    const text = typeof body.text === "string" ? body.text.trim() : "";
+    const text = requireString(body.text, "text");
+    const toolName = typeof body.toolName === "string" ? body.toolName : null;
+    const toolCallId = typeof body.toolCallId === "string" ? body.toolCallId : null;
+    const toolArgsJson = body.toolArgsJson as Prisma.InputJsonValue | null | undefined;
+    const toolResultJson = body.toolResultJson as Prisma.InputJsonValue | null | undefined;
 
     const allowedRoles: Role[] = [Role.user, Role.assistant, Role.tool];
     if (!allowedRoles.includes(role) || !text.trim()) {
-      return corsResponse({ ok: false, error: "role and text required" }, 400);
+      return { ok: false, error: "role and text required", status: 400 };
     }
 
     const titleUpdate =
@@ -47,10 +54,10 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
           conversationId: convo.id,
           role,
           text: text.slice(0, 4000),
-          toolName: body.toolName ?? null,
-          toolCallId: body.toolCallId ?? null,
-          toolArgsJson: body.toolArgsJson ?? null,
-          toolResultJson: body.toolResultJson ?? null,
+          toolName,
+          toolCallId,
+          toolArgsJson: toolArgsJson ?? Prisma.JsonNull,
+          toolResultJson: toolResultJson ?? Prisma.JsonNull,
         },
       }),
       prisma.conversation.update({
@@ -66,18 +73,13 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       void maybeUpdateConversationSummary(convo.id);
     }
 
-    return corsResponse({ 
-      ok: true, 
+    return {
       message,
       conversationId: convo.id,
-    });
-  } catch (err: any) {
-    if (err?.message === "Unauthorized") {
-      return corsResponse({ ok: false, error: "Unauthorized" }, 401);
-    }
-    return corsResponse({ ok: false, error: err.message }, 500);
-  }
-}
+    };
+  },
+  { auth: true, rateLimit: { key: "messages-write", limit: 120, windowMs: 60_000 } },
+);
 
 export async function OPTIONS() {
   return corsOptionsResponse();

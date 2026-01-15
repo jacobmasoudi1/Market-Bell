@@ -1,27 +1,25 @@
-import { NextResponse } from "next/server";
-import { corsResponse, corsOptionsResponse } from "@/lib/cors";
-import { requireUserId } from "@/lib/auth-session";
+import { NextRequest } from "next/server";
+import { corsOptionsResponse } from "@/lib/cors";
+import { withApi } from "@/lib/api/withApi";
 
 type VapiCallResponse = {
   id: string;
   clientUrl: string;
 };
 
-export async function POST() {
-  try {
-    await requireUserId();
-
+export const POST = withApi(
+  async (_req: NextRequest, _ctx, _context) => {
     const apiKey = process.env.VAPI_SECRET_KEY;
     const assistantId = process.env.NEXT_PUBLIC_VAPI_ASSISTANT_ID;
 
     if (!apiKey || !assistantId) {
-      return corsResponse(
-        { error: "Missing VAPI_SECRET_KEY or NEXT_PUBLIC_VAPI_ASSISTANT_ID" },
-        500
-      );
+      return { ok: false, error: "Missing VAPI_SECRET_KEY or NEXT_PUBLIC_VAPI_ASSISTANT_ID", status: 500 };
     }
 
     const requestBody = { assistantId };
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 8000);
 
     const res = await fetch("https://api.vapi.ai/call", {
       method: "POST",
@@ -30,37 +28,23 @@ export async function POST() {
         Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify(requestBody),
-    });
+      signal: controller.signal,
+    }).finally(() => clearTimeout(timer));
 
     if (!res.ok) {
       const errText = await res.text();
-      console.error("[CallToken] VAPI API error", { status: res.status, statusText: res.statusText, error: errText });
-      return corsResponse(
-        { error: `Vapi call failed: ${errText || res.statusText}` },
-        res.status
-      );
+      return { ok: false, error: `Vapi call failed: ${errText || res.statusText}`, status: res.status };
     }
 
     const data = (await res.json()) as VapiCallResponse;
     if (!data.clientUrl) {
-      return corsResponse(
-        { error: "Vapi response missing clientUrl" },
-        500
-      );
+      return { ok: false, error: "Vapi response missing clientUrl", status: 500 };
     }
 
-    return corsResponse({ clientUrl: data.clientUrl, callId: data.id });
-  } catch (err: any) {
-    if (err?.message === "Unauthorized") {
-      return corsResponse({ error: "Unauthorized" }, 401);
-    }
-    console.error("Vapi token error", err);
-    return corsResponse(
-      { error: "Unable to create Vapi call token" },
-      500
-    );
-  }
-}
+    return { clientUrl: data.clientUrl, callId: data.id };
+  },
+  { auth: true, rateLimit: { key: "vapi-call-token", limit: 30, windowMs: 60_000 } },
+);
 
 export async function OPTIONS() {
   return corsOptionsResponse();
