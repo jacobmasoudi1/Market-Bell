@@ -13,20 +13,22 @@ export const POST = withApi(
     const params = await Promise.resolve(context.params);
     const id = params?.id as string;
 
-    let convo = await prisma.conversation.findFirst({
+    const convo = await prisma.conversation.findFirst({
       where: { id, userId: userId as string },
       select: { id: true, title: true },
     });
 
-    if (!convo) {
-      convo = await prisma.conversation.create({
+    // If the provided conversationId is not owned/found, create a new one and return its id.
+    // This preserves prior fallback behavior while avoiding cross-user access.
+    const resolvedConvo =
+      convo ??
+      (await prisma.conversation.create({
         data: {
           userId: userId as string,
           lastMessageAt: new Date(),
         },
         select: { id: true, title: true },
-      });
-    }
+      }));
 
     const body = safeJson(await request.json().catch(() => ({})));
     const role = body.role as Role;
@@ -42,7 +44,7 @@ export const POST = withApi(
     }
 
     const titleUpdate =
-      (!convo.title || !convo.title.trim()) &&
+      (!resolvedConvo.title || !resolvedConvo.title.trim()) &&
       (role === Role.user || role === Role.assistant) &&
       !isNoiseText(text)
         ? buildTitle(text)
@@ -51,7 +53,7 @@ export const POST = withApi(
     const [message] = await prisma.$transaction([
       prisma.message.create({
         data: {
-          conversationId: convo.id,
+          conversationId: resolvedConvo.id,
           role,
           text: text.slice(0, 4000),
           toolName,
@@ -61,7 +63,7 @@ export const POST = withApi(
         },
       }),
       prisma.conversation.update({
-        where: { id: convo.id },
+        where: { id: resolvedConvo.id },
         data: {
           lastMessageAt: new Date(),
           ...(titleUpdate ? { title: titleUpdate } : {}),
@@ -70,12 +72,12 @@ export const POST = withApi(
     ]);
 
     if (role === Role.assistant || role === Role.user) {
-      void maybeUpdateConversationSummary(convo.id);
+      void maybeUpdateConversationSummary(resolvedConvo.id);
     }
 
     return {
       message,
-      conversationId: convo.id,
+      conversationId: resolvedConvo.id,
     };
   },
   { auth: true, rateLimit: { key: "messages-write", limit: 120, windowMs: 60_000 } },

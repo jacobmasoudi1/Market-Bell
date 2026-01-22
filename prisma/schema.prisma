@@ -83,19 +83,47 @@ model PendingConfirmation {
   id             String   @id @default(cuid())
   conversationId String
   toolName       String
-  ticker         String
+  ticker         String?
   args           Json
+  argsHash       String?
   userId         String
+  toolCallId     String?
   expiresAt      DateTime
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
-  @@index([conversationId, toolName, ticker])
-  @@unique([conversationId, toolName, ticker], name: "conversationId_toolName_ticker")
+  @@index([conversationId, userId, toolName, ticker])
+  @@index([expiresAt])
+  @@unique([conversationId, userId, toolName, ticker], name: "pending_conversation_user_tool_ticker")
+}
+
+model ProcessedToolCall {
+  id             String          @id @default(cuid())
+  toolCallId     String          @unique
+  eventId        String?
+  conversationId String?
+  userId         String?
+  toolName       String?
+  status         ToolCallStatus
+  resultJson     Json?
+  errorJson      Json?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  @@index([eventId])
+  @@index([conversationId])
 }
 
 enum Role {
   user
   assistant
   tool
+}
+
+enum ToolCallStatus {
+  processing
+  succeeded
+  failed
 }
 
 enum Risk {

@@ -3,8 +3,9 @@
 import { useEffect, useState } from "react";
 import { useWatchlistSync } from "@/hooks/useWatchlistSync";
 import { useAddWatchlistItem, useRemoveWatchlistItem, useWatchlist } from "@/lib/hooks";
+import toast from "react-hot-toast";
 
-type Item = { id: string; ticker: string; reason?: string; createdAt?: string };
+type Item = { id: string; ticker: string; reason?: string | null; createdAt?: string };
 
 export function Watchlist() {
   const [items, setItems] = useState<Item[]>([]);
@@ -30,6 +31,7 @@ export function Watchlist() {
     } catch (err: any) {
       console.error("Watchlist load failed", err);
       setStatus("Couldn't load watchlist. Try again.");
+      toast.error("Couldn't load watchlist. Try again.");
     }
   };
 
@@ -52,9 +54,11 @@ export function Watchlist() {
       const res = await refreshWatchlist();
       setItems((res as any)?.items || watchlistData?.items || []);
       setStatus("Added to watchlist");
+      toast.success("Added to watchlist");
     } catch (err: any) {
       console.error("Watchlist add failed", err);
       setStatus("Add failed. Try again.");
+      toast.error("Add failed. Try again.");
     } finally {
       setLoading(false);
     }
@@ -68,9 +72,11 @@ export function Watchlist() {
       const res = await refreshWatchlist();
       setItems((res as any)?.items || watchlistData?.items || []);
       setStatus("Removed");
+      toast.success("Removed from watchlist");
     } catch (err: any) {
       console.error("Watchlist remove failed", err);
       setStatus("Remove failed. Try again.");
+      toast.error("Remove failed. Try again.");
     } finally {
       setLoading(false);
     }

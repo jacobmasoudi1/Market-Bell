@@ -16,16 +16,8 @@ import { ToolShortcuts } from "./components/ToolShortcuts";
 import { useUserProfile } from "@/lib/hooks";
 
 export default function Home() {
-  const {
-    transcript,
-    history,
-    conversationId,
-    addMessage,
-    ensureConversation,
-    loadHistory,
-    selectConversation,
-    startNewConversation,
-  } = useConversation();
+  const { transcript, history, conversationId, addMessage, ensureConversation, loadHistory, selectConversation, startNewConversation } =
+    useConversation();
 
   const {
     isSessionActive,

@@ -16,3 +16,5 @@ export const buildTitle = (text: string) => {
   const max = 80;
   return sanitized.length > max ? sanitized.slice(0, max - 1) + "…" : sanitized;
 };
+
+export const placeholderTitle = (id?: string | null) => `Conversation ${id?.slice(0, 6) ?? "draft"}`;

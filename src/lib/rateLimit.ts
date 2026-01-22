@@ -44,3 +44,30 @@ export function rateLimitHeaders(req: Request | { headers: Headers }, bucket: st
     "X-RateLimit-Reset": String(reset),
   };
 }
+
+// Direct keyed rate limit for non-IP contexts (e.g., webhook/tool calls).
+export function rateLimitByKey(key: string, limit = DEFAULT_LIMIT, windowMs = DEFAULT_WINDOW_MS): boolean {
+  const now = Date.now();
+  const existing = buckets.get(key);
+  if (!existing || existing.resetAt < now) {
+    buckets.set(key, { count: 1, resetAt: now + windowMs });
+    return true;
+  }
+  if (existing.count >= limit) {
+    return false;
+  }
+  existing.count += 1;
+  buckets.set(key, existing);
+  return true;
+}
+
+export function rateLimitHeadersByKey(key: string, limit = DEFAULT_LIMIT) {
+  const entry = buckets.get(key);
+  const remaining = entry ? Math.max(0, limit - entry.count) : limit - 1;
+  const reset = entry ? Math.max(0, entry.resetAt - Date.now()) : DEFAULT_WINDOW_MS;
+  return {
+    "X-RateLimit-Limit": String(limit),
+    "X-RateLimit-Remaining": String(remaining),
+    "X-RateLimit-Reset": String(reset),
+  };
+}

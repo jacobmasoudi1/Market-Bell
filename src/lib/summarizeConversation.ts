@@ -166,6 +166,13 @@ export async function maybeUpdateConversationSummary(conversationId: string): Pr
       });
     }
   } catch (error) {
-    console.error("Failed to update conversation summary", error);
+    console.error("Failed to update conversation summary", { conversationId, error });
+    // Soft retry once after a brief delay to handle transient model/db errors.
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      await maybeUpdateConversationSummary(conversationId);
+    } catch (err) {
+      console.error("Summary retry failed", { conversationId, error: err });
+    }
   }
 }
