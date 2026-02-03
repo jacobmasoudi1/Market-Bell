@@ -5,7 +5,7 @@ const CONFIRMATION_TTL_MS = 5 * 60 * 1000;
 
 type PendingRecord = {
   toolName: string;
-  ticker: string;
+  ticker: string | null;
   args: Prisma.JsonValue;
   userId: string;
   expiresAt: Date;
@@ -24,8 +24,9 @@ export async function storePendingConfirmation(
   
   await prisma.pendingConfirmation.upsert({
     where: {
-      conversationId_toolName_ticker: {
+      pending_conversation_user_tool_ticker: {
         conversationId,
+        userId,
         toolName,
         ticker,
       },
@@ -52,47 +53,31 @@ export async function getPendingConfirmation(
   ticker?: string,
 ): Promise<PendingRecord | null> {
   const now = new Date();
-  if (ticker) {
-    const pending = await prisma.pendingConfirmation.findUnique({
-      where: {
-        conversationId_toolName_ticker: {
-          conversationId,
-          toolName,
-          ticker,
-        },
-      },
-    });
-    if (pending && pending.expiresAt > now) {
-      return pending;
-    }
-    if (pending) {
-      await prisma.pendingConfirmation.delete({
-        where: {
-          conversationId_toolName_ticker: {
-            conversationId,
-            toolName,
-            ticker,
-          },
-        },
-      });
-    }
-    return null;
-  }
-
+  const where = {
+    conversationId,
+    toolName,
+    expiresAt: { gt: now } as const,
+    ...(ticker != null && { ticker }),
+  };
   const pending = await prisma.pendingConfirmation.findFirst({
-    where: {
-      conversationId,
-      toolName,
-      expiresAt: { gt: now },
-    },
+    where,
     orderBy: { expiresAt: "desc" },
   });
-  return pending ? pending : null;
+  if (!pending) return null;
+  if (pending.expiresAt <= now) {
+    await prisma.pendingConfirmation.deleteMany({ where: { id: pending.id } });
+    return null;
+  }
+  return pending;
 }
 
-export async function clearPendingConfirmation(conversationId: string, toolName: string, ticker: string): Promise<void> {
+export async function clearPendingConfirmation(
+  conversationId: string,
+  toolName: string,
+  ticker: string | null,
+): Promise<void> {
   await prisma.pendingConfirmation.deleteMany({
-    where: { conversationId, toolName, ticker },
+    where: { conversationId, toolName, ...(ticker !== undefined && { ticker }) },
   });
 }
 
